@@ -1,197 +1,210 @@
 # Bodhi
-Building a voice-first, low-latency AI Mock Interviewer is a massive technical undertaking. Since you are moving away from simple orchestration toward a full-scale speech-driven system with integrated coding and persistent memory, the feature set needs to be industrial-grade.
 
-Here is the comprehensive documentation for the features and technical integration of your **Hinglish AI HR System**.
-
----
-
-## Tech Stack (Backend)
-
-* **Language:** Python
-* **API Framework:** FastAPI — high-performance, async delivery layer for WebSocket streaming, REST endpoints, and horizontal scaling.
-* **AI Orchestration:** LangChain + LangGraph — LangGraph as the primary orchestration layer; LangChain for sub-flows (prompts, RAG). Google Gemini API powers the LLM.
-* **Speech SDKs:** Sarvam AI — `sarvamai` Python package (`pip install sarvamai`). Saaras V3 for STT, Bulbul V3 for TTS. Both support WebSocket streaming for low latency.
-* **Additional Resources:** Pydantic (validation), Uvicorn (ASGI server), `sounddevice` (mic capture & playback), `webrtcvad` (voice activity detection), `soundfile` (audio I/O).
+A voice-first, low-latency AI Mock Interviewer. Bodhi conducts structured mock interviews entirely by voice — you speak, it listens, responds, and adapts. No frontend required; runs from the terminal.
 
 ---
 
-## API Keys (Environment Variables)
+## What It Can Do Right Now
 
-| Service | Env Variable | Usage |
+Bodhi is a fully working CLI voice interview system. Here's what happens when you run it:
+
+1. **You launch `python -m src.main`** — Bodhi connects to NeonDB and Redis (if configured), loads any entity context for the target company, and starts the interview.
+2. **Bodhi introduces itself** and asks the first behavioral question (TTS via Bulbul V3, played through your speakers).
+3. **You answer by speaking** — the mic listens hands-free using VAD. No buttons, no Enter key. Talk for as long as you need (up to 2 minutes per answer). When you pause for ~1.5 seconds, recording stops automatically.
+4. **Your speech is transcribed** to English text (Saaras V3 STT). Long answers (>25s) are auto-chunked to stay within API limits.
+5. **Bodhi thinks and responds** — LangGraph orchestrates the interview flow. Gemini generates a context-aware follow-up, probing deeper or transitioning phases.
+6. **The response is spoken aloud** (Bulbul V3 TTS) and the cycle repeats.
+7. **Bodhi autonomously progresses** through interview phases: `intro → behavioral → technical → coding → wrapup`, using LangGraph tools to transition, score answers, and adjust difficulty.
+8. **Session data is persisted** — transcripts, phase scores, and session records are saved to NeonDB on phase transitions and session end. Entity context is cached in Redis for sub-millisecond lookups.
+
+### Current Limitations
+
+- CLI only — no web frontend yet.
+- English-only STT (Hinglish/Hindi planned for later).
+- No code editor integration yet (Monaco planned for Phase 2).
+- No resume/JD parsing yet.
+
+---
+
+## Tech Stack
+
+| Layer | Technology | Role |
 | --- | --- | --- |
-| **Sarvam AI** | `SARVAM_API_KEY` | Passed as `api_subscription_key` to `AsyncSarvamAI`. Used for Saaras (STT) and Bulbul (TTS). |
-| **Google Gemini** | `GOOGLE_API_KEY` or `GEMINI_API_KEY` | Used by `langchain-google-genai` / `ChatGoogleGenerativeAI` for LLM responses. |
+| **Language** | Python 3.11+ | Backend runtime |
+| **AI Orchestration** | LangGraph + LangChain | Stateful interview graph, tool invocation, conditional routing |
+| **LLM** | Google Gemini (`gemini-3.1-flash-lite-preview`) | Conversational AI via `ChatGoogleGenerativeAI` |
+| **STT** | Sarvam AI Saaras V3 | Speech-to-text (`mode="transcribe"`, `language_code="en-IN"`) |
+| **TTS** | Sarvam AI Bulbul V3 | Text-to-speech (speaker `shubh`) |
+| **Audio** | `sounddevice` + `webrtcvad` + `soundfile` | Mic capture, VAD, audio I/O |
+| **Edge State** | LangGraph `MemorySaver` | Zero-latency in-process checkpointing |
+| **Cache** | Redis (`redis-py`) | Sub-ms session snapshots and entity context |
+| **Persistent Storage** | NeonDB PostgreSQL (`psycopg2`) | Sessions, transcripts, phase results, entity knowledge |
 
 ---
 
-## Phase 0: CLI Voice Loop (Current Scope)
+## Environment Variables
 
-* **Goal:** Run from terminal → speak (Hindi/English/Hinglish) → hear AI response. No web frontend. Hands-free natural conversation.
-* **Voice Modes:**
-  - **`natural` (default):** VAD-based, hands-free. The mic listens continuously, detects when you start speaking, records your utterance, and stops automatically after ~1.5 seconds of silence. No key presses needed — just talk.
-  - **`manual`:** Press Enter to start recording, Enter again to stop. Useful as a fallback if your environment is too noisy for VAD.
-* **Flow:**
-  1. **Mic capture** → Persistent `sounddevice.InputStream` streams 20ms audio frames (16kHz, mono, 16-bit) from the selected microphone.
-  2. **Voice Activity Detection (VAD)** → `webrtcvad` (aggressiveness 3) classifies each frame as speech or silence. Recording requires 5 consecutive speech-positive frames (~100ms) before committing — isolated noise spikes are ignored. A pre-buffer preserves the audio just before speech onset so no words are clipped.
-  3. **Saaras V3 (STT)** → Sarvam REST API (`client.speech_to_text.transcribe` with `model="saaras:v3"`). Uses `mode="codemix"` for Hinglish support and `language_code="hi-IN"`.
-  4. **Gemini (LLM)** → Transcribed text → Google Gemini (`gemini-3.1-flash-lite-preview`) via LangChain `ChatGoogleGenerativeAI` → generates reply with conversation history.
-  5. **Bulbul V3 (TTS)** → Sarvam TTS (`model="bulbul:v3"`, speaker `shubh`, `target_language_code="hi-IN"`). Converts reply text to speech audio.
-  6. **Playback** → Audio played back through speakers via `sounddevice`.
-  7. **Loop** → After playback, mic reopens and waits indefinitely for the next utterance. No timeout before speech — you can pause for any duration between turns.
-* **VAD Details:**
-  - Uses `webrtcvad` at aggressiveness level 3 (strictest, least likely to false-trigger on ambient noise).
-  - Requires 5 consecutive speech frames (~100ms) before recording starts — prevents background noise from triggering false recordings.
-  - Stops recording after 1.5 seconds of continuous silence following speech.
-  - Safety cap of 30 seconds per utterance (starts counting from first speech, not from mic open).
-  - Pre-buffer (600ms) captures audio just before detected speech onset, so the beginning of your sentence is never lost.
+| Variable | Required | Description |
+| --- | --- | --- |
+| `SARVAM_API_KEY` | Yes | Sarvam AI key for Saaras (STT) and Bulbul (TTS) |
+| `GOOGLE_API_KEY` | Yes | Google Gemini API key |
+| `DATABASE_URL` | No | NeonDB PostgreSQL connection string. If unset, persistence is skipped. |
+| `REDIS_URL` | No | Redis connection (default `redis://localhost:6379`). If unreachable, caching is skipped. |
+| `BODHI_VOICE_MODE` | No | `natural` (default, VAD-based) or `manual` (Enter-to-record) |
+| `BODHI_INPUT_DEVICE` | No | Microphone device index. Run `list_input_devices` to find yours. |
+| `BODHI_CANDIDATE` | No | Candidate name for the session |
+| `BODHI_COMPANY` | No | Target company (prompted at startup if unset) |
+| `BODHI_ROLE` | No | Target role (default: `Software Engineer`) |
 
-### Running Phase 0
+---
+
+## Getting Started
 
 ```bash
-# 1. Create .env and add your API keys (copy from .env.example)
-#    SARVAM_API_KEY=...
-#    GOOGLE_API_KEY=...
-#    BODHI_VOICE_MODE=natural        # or "manual" for Enter-to-record
-#    BODHI_INPUT_DEVICE=             # optional: device index (run list_input_devices to find yours)
+# 1. Clone the repo and enter the directory
+cd Bodhi
 
-# 2. Create a virtual environment (recommended)
+# 2. Create a virtual environment
 python -m venv .venv
-.venv\Scripts\activate   # Windows
-# source .venv/bin/activate  # macOS/Linux
+.venv\Scripts\activate        # Windows
+# source .venv/bin/activate   # macOS/Linux
 
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. (Optional) List available microphones to find your device index
-python -c "from src.audio import list_input_devices; list_input_devices()"
+# 4. Create .env with your API keys (copy from .env.example)
+#    SARVAM_API_KEY=...
+#    GOOGLE_API_KEY=...
+#    DATABASE_URL=...          # optional (NeonDB)
+#    REDIS_URL=...             # optional
 
-# 5. Run the voice loop (from project root)
+# 5. (Optional) Find your microphone device index
+python -c "from src.audio import list_input_devices; list_input_devices()"
+# Set BODHI_INPUT_DEVICE in .env to the index of your preferred mic
+
+# 6. Run the interview
 python -m src.main
 ```
 
-**Natural mode:** Just speak → VAD detects speech → records → stops after 1.5s silence → transcribes → Gemini reply → TTS playback → waits for next utterance. Ctrl+C to exit.
-
-**Manual mode:** Press Enter → start recording → speak → Press Enter to stop → transcribes → Gemini reply → TTS playback. Repeat. Ctrl+C to exit.
+On startup, Bodhi connects to Redis and NeonDB (if configured), prompts for a target company, and begins the mock interview. Just speak naturally — Ctrl+C to exit.
 
 ---
 
-## 1. Speech Stack (The Voice Layer)
+## How the Voice Pipeline Works
 
-To achieve "Rapid Manner" responses with minimal latency, we will use a **streaming architecture** rather than a batch (request-response) one.
+```
+Mic → VAD → Record → STT (Saaras V3) → LangGraph (Gemini) → TTS (Bulbul V3) → Speaker → Loop
+```
 
-* **STT: Saaras V3 (Streaming Mode):**
-* **Real-time Transcription:** Unlike standard STT that waits for a sentence to end, Saaras V3 allows for "incremental decoding." The AI starts "thinking" about the response while the user is still finishing their sentence.
-* **Hinglish Mastery:** Native support for code-mixing (e.g., *"Mera experience Java backend mein hai"*).
+### Recording (VAD)
 
+- **Persistent `sounddevice.InputStream`** streams 20ms audio frames (16kHz, mono, 16-bit).
+- **`webrtcvad`** (aggressiveness 3) classifies each frame as speech or silence.
+- **Energy gate**: Frames with RMS amplitude below threshold (80) are forced to "not speech" regardless of VAD — prevents microphone noise floor from being classified as speech.
+- **Speech confirmation**: 5 consecutive speech-positive frames (~100ms) required before recording starts. Isolated noise is ignored.
+- **Pre-buffer** (600ms): Captures audio just before speech onset so the beginning of your sentence is never lost.
+- **Silence cutoff**: Recording stops after 1.5 seconds of continuous silence.
+- **Max duration**: 120 seconds (2 minutes) safety cap per utterance.
+- **Manual fallback**: Set `BODHI_VOICE_MODE=manual` to use Enter-to-record if your environment is too noisy.
 
-* **TTS: Bulbul V3 (Expressive Voice):**
-* **Telephony Grade Audio:** Optimized for 8kHz/16kHz to ensure the HR's voice sounds like a real phone/web call.
-* **Prosody Control:** It supports contextual pauses and emphasis, so the HR doesn't sound like a robot when asking difficult questions.
-* **Bilingual Output:** Can switch between Hindi and English mid-sentence without changing the voice font.
+### STT (Auto-Chunking)
 
+Sarvam's API has a 30-second limit per request. For long answers, the audio is automatically split into <=25-second chunks, each transcribed separately, and results joined.
 
+### Error Recovery
 
----
-
-## 2. Dynamic Question "Doctor" System
-
-Instead of a static list, this system "diagnoses" the user's needs to curate a custom interview.
-
-* **Company-Specific Scraper/Engine:** You will feed the system data on specific hiring patterns (e.g., Google's focus on Go/Algorithms vs. a startup's focus on React/Product).
-* **Resume-Job Description (JD) Mapping:** The "Doctor" module compares the user's uploaded resume against the company's target role to find "weak spots" and target them with questions.
-* **Difficulty Scaling:** If the user answers perfectly, the system automatically increases the technical depth (e.g., moving from "What is an Index?" to "How does a B-Tree handle concurrent writes?").
-
----
-
-## 2a. Intelligence Device (RAG System)
-
-A **Retrieval Augmented Generation (RAG)** system maintains a persistent entity knowledge base that keeps the interview grounded and company-specific.
-
-* **Entity Knowledge Base:** Users contribute information about entities (companies, roles, domains)—e.g., *"Just Payments is a company focused on technical payment solutions"*—which is stored in the database and indexed for retrieval.
-* **Crowdsourced + Latest Data:** When another user preps for a similar entity, the system retrieves pre-existing data plus the latest contributions to build accurate, up-to-date interview content. No stale or fragmented intelligence.
-* **Feeds the Question Doctor:** The RAG layer augments the Question Doctor with company-specific patterns, hiring focus, and technical expectations—so questions reflect real-world targets (Google, Meta, startups, etc.).
-* **Implementation:** LangChain orchestrates the RAG pipeline (embedding, vector store, retrieval). Vector storage (e.g., Chroma, FAISS, or pgvector in PostgreSQL) enables semantic search over entity and interview data.
+- **3 consecutive mic errors** → app exits with a message to check device connection.
+- **Ctrl+C** → session data is flushed to NeonDB/Redis before exiting.
+- **Redis/NeonDB unavailable** → system continues with in-memory state only.
 
 ---
 
-## 3. LangChain & LangGraph Workflow Orchestration
+## Interview Orchestration (LangGraph)
 
-The interview flow is **not linear**. The AI must decide when sections end, transition between rounds, and invoke features (e.g., code editor) dynamically. This requires a **stateful graph**, not a simple chain.
+The interview is modeled as a **LangGraph StateGraph** with the following structure:
 
-* **LangGraph State Machine:** The interview is modeled as a directed graph with explicit state. Nodes represent phases (e.g., *General/Behavioral Round*, *Technical Round*, *Coding Round*). Edges define transitions; conditional edges route based on the AI's decision.
-* **Section Transitions:** When the AI concludes the general/behavioral round and decides to move to technical rounds, that decision updates the graph state. The transition is persisted, so the system never "forgets" which phase the user is in.
-* **Tool Invocation:** The AI can call tools as graph nodes—e.g., `pull_up_code_editor` when it decides to start the coding round. LangGraph routes to the tool node, executes it (which surfaces the Monaco editor to the user), and returns control to the conversational flow.
-* **LangChain Integration:** LangChain handles linear sub-flows (RAG retrieval, prompt assembly). LangGraph orchestrates the higher-level, branching workflow—when to ask, when to evaluate, when to switch rounds, when to invoke the code editor.
-* **Why Both:** LangChain = modular, stateless chains (RAG, prompts). LangGraph = cyclic, stateful workflows with loops, branches, and tool calls. Together they enable an interview that adapts in real time.
+### Phases
 
----
+`intro` → `behavioral` → `technical` → `coding` → `wrapup`
 
-## 4. Real-Time Coding Editor & Evaluator
+The LLM decides when to transition phases using LangGraph tools.
 
-A side-by-side terminal where the AI acts as a "Senior Pair Programmer."
+### Tools Available to the LLM
 
-* **Collaborative Editor:** Integrated **Monaco Editor** (the engine behind VS Code).
-* **Live Code Analysis:** As the user writes, the system doesn't just check if the code *runs*; it checks for:
-* **Logic Errors:** Identifies infinite loops or edge-case failures.
-* **Complexity Analysis:** Gives feedback on $O(n)$ vs $O(n^2)$ efficiency.
+| Tool | What It Does |
+| --- | --- |
+| `transition_phase` | Move to the next interview phase |
+| `score_answer` | Score the candidate's answer (1-10) with reasoning |
+| `adjust_difficulty` | Raise or lower question difficulty (1-5 scale) |
+| `end_interview` | Conclude the interview and trigger session flush |
 
+### State Management
 
-* **The "Nudge" Mechanism:** If the user is stuck, the AI won't give the answer immediately. It will provide a "hint" (e.g., *"Aap yahan Hashmap use karke time complexity kam kar sakte hain"*).
+- **`InterviewState`** (TypedDict): Tracks messages, session ID, candidate info, current phase, difficulty level, phase scores, entity context, and end flag.
+- **`MemorySaver`**: In-process checkpointing — zero I/O on the voice loop hot path.
+- **Phase-aware system prompts**: The HR persona ("Bodhi") adapts behavior per phase — STAR-method probing in behavioral, difficulty scaling in technical, hints-not-answers in coding.
 
----
+### Three-Tier Storage
 
-## 5. Persistent Memory & Rapid Database Sync
+| Tier | Technology | Latency | Purpose |
+| --- | --- | --- | --- |
+| **Edge** | `MemorySaver` | 0ms | Full state in RAM during session |
+| **Cache** | Redis | <1ms | Session snapshots, entity context |
+| **Persistent** | NeonDB PostgreSQL | ~50ms | Sessions, transcripts, phase results, entity knowledge base |
 
-For a **50-minute session**, the AI cannot lose track of what was said at minute 5.
-
-* **Continuous Context Window:** We will use **Gemini 1.5 Flash** due to its 1-million+ token context window. It will literally "remember" the entire 50-minute transcript without needing summarization.
-* **Rapid Database (PostgreSQL/Firebase):** Every spoken word and every keystroke in the code editor is synced to a **PostgreSQL** or **Firebase** database every 500ms.
-* **Post-Interview Analytics:** After the session, the database generates a "Heatmap" of the user's performance—where they stuttered, where their code failed, and where they were most confident.
-
-
-
----
-
-## 6. HR Persona & Behavioral Intelligence
-
-The "HR Bot" is programmed to be a "tough but fair" interviewer.
-
-* **Situational Awareness:** If the user gives a vague answer, the bot is instructed to "double down" (e.g., *"That's a good start, but can you give me a specific instance where you handled a conflict in your team?"*).
-* **Likhit (Written) + Shrut (Oral) Feedback:** While the conversation is voice-based, a real-time sidebar provides written "Interviewer Notes" so the user can see live feedback on their tone or technical accuracy.
+Data flows down: edge → cache → DB. Written asynchronously on phase transitions and session end.
 
 ---
 
-### Feature Summary Table
+## Project Structure
 
-| Feature | Technology | Primary Benefit |
-| --- | --- | --- |
-| **Backend** | Python + FastAPI | Async API, WebSocket streaming, production-ready delivery. |
-| **Phase 0 Voice** | Sarvam SDK + Gemini + webrtcvad | Hands-free VAD voice loop: speak → auto-detect → transcribe → reply → TTS. |
-| **Orchestration** | LangChain + LangGraph | Stateful workflow; section transitions; tool invocation (e.g., code editor). |
-| **Intelligence Device** | RAG + Entity DB | Crowdsourced company/role data; grounds interviews in real hiring patterns. |
-| **Bilingual Voice** | Saaras V3 + Bulbul V3 | Natural, low-latency Hinglish conversation. |
-| **Code Editor** | Monaco + Gemini Evaluator | Real-time code feedback and "Hints." |
-| **Context Memory** | 1M Token Window | Remembers the full 50-minute session. |
-| **Rapid Sync** | WebSocket + PostgreSQL/Firebase | Zero data loss; sub-second state updates. |
-| **Question Doctor** | RAG + Company Data | Curated questions for specific firms (Google, Meta, etc.). |
-
----
-
-## Questions Before Implementation
-
-1. **Saaras vs Cyrus:** You mentioned "Cyrus V3 from Servum" — the Sarvam API docs refer to **Saaras V3**. Are these the same, or do you have a different STT provider in mind?
-
-2. **STT mode:** For "my personal language" (Hindi or English), should we use `codemix` (Hinglish), `transcribe` (single language with `language_code`), or auto-detect based on user preference?
-
-3. **TTS speaker & language:** Preferred Bulbul speaker (e.g., Shubh, Priya, Aditya)? Should TTS mirror the user's input language, or always output in a fixed language (e.g., Hinglish)?
-
-4. **End-of-speech trigger:** ~~Resolved~~ — Using `webrtcvad` (aggressiveness 3) with 5-frame speech confirmation and 1.5s silence cutoff. Manual Enter-to-record available as fallback via `BODHI_VOICE_MODE=manual`.
-
-5. **Gemini model:** Currently using `gemini-3.1-flash-lite-preview`. Consider `gemini-1.5-flash` (1M context) or `gemini-1.5-pro` for later phases.
-
-6. **Persona in Phase 0:** For the initial CLI loop, should the AI already behave as the "HR interviewer" (tough but fair), or as a generic conversational assistant for now?
+```
+Bodhi/
+├── src/
+│   ├── __init__.py
+│   ├── main.py            # Entry point — session lifecycle, graph invocation
+│   ├── audio.py           # Mic recording (VAD), playback
+│   ├── state.py           # InterviewState TypedDict, phase definitions
+│   ├── prompts.py         # Phase-aware HR interviewer system prompts
+│   ├── tools.py           # LangGraph tools (transition, score, difficulty, end)
+│   ├── graph.py           # StateGraph construction and compilation
+│   ├── cache.py           # Redis cache layer (BodhiCache)
+│   ├── storage.py         # NeonDB persistence layer (BodhiStorage)
+│   └── services/
+│       ├── llm.py         # Gemini LLM setup via LangChain
+│       ├── stt.py         # Saaras V3 STT (with auto-chunking)
+│       └── tts.py         # Bulbul V3 TTS
+├── requirements.txt
+├── .env.example
+├── .gitignore
+├── TECHNICAL.md           # Internal architecture docs (gitignored)
+└── README.md
+```
 
 ---
 
-**Next Step:**
-Would you like me to create the **detailed JSON Schema** for the Database so you can see exactly how the 50-minute context, entity/RAG data, and coding scores will be stored?
+## Roadmap
+
+### Done
+
+- [x] Phase 0: CLI voice loop (mic → STT → LLM → TTS → speaker)
+- [x] VAD-based hands-free recording with energy gating and auto-chunking
+- [x] Phase 1: LangGraph interview orchestration (phases, tools, scoring)
+- [x] Three-tier storage (MemorySaver + Redis + NeonDB)
+- [x] HR persona with phase-aware system prompts
+- [x] Graceful degradation (Redis/NeonDB optional)
+- [x] Error recovery (consecutive mic failures, Ctrl+C flush)
+
+### Next
+
+- [ ] Phase 2: FastAPI server + WebSocket streaming for real-time STT/TTS
+- [ ] Monaco code editor integration for coding rounds
+- [ ] RAG pipeline with vector search for entity knowledge
+- [ ] Resume/JD parsing and gap analysis ("Question Doctor")
+- [ ] Hinglish/Hindi language support (STT + TTS)
+- [ ] Post-interview analytics and performance heatmap
+- [ ] Frontend UI
+
+---
+
+> Internal architecture details are documented in `TECHNICAL.md` (gitignored, local only).

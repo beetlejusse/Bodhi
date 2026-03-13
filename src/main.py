@@ -1,17 +1,125 @@
+"""Bodhi Phase 1 — LangGraph-powered voice interview loop."""
+
 import os
 import sys
 import time
+import uuid
+
 from dotenv import load_dotenv
 import sounddevice as sd
-from src.audio import record_until_enter, record_until_silence
-from src.services.llm import get_reply
+from langchain_core.messages import HumanMessage
+
+from src.audio import get_input_device, record_until_enter, record_until_silence
+from src.graph import build_interview_graph
+from src.services.llm import create_llm, _extract_text
 from src.services.stt import transcribe_audio
 from src.services.tts import speak
 
 load_dotenv()
 
-# BODHI_VOICE_MODE=natural (VAD, no Enter) or manual (Enter to start/stop)
 VOICE_MODE = (os.getenv("BODHI_VOICE_MODE") or "natural").strip().lower()
+
+
+def _init_storage():
+    """Connect to NeonDB. Returns BodhiStorage or None if DATABASE_URL not set."""
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    if not db_url:
+        print("  [storage] DATABASE_URL not set — skipping NeonDB persistence.")
+        return None
+    try:
+        from src.storage import BodhiStorage
+        storage = BodhiStorage(db_url)
+        storage.init_tables()
+        print("  [storage] NeonDB connected.")
+        return storage
+    except Exception as e:
+        print(f"  [storage] NeonDB connection failed: {e} — continuing without persistence.")
+        return None
+
+
+def _init_cache():
+    """Connect to Redis. Returns BodhiCache or None if unavailable."""
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379").strip()
+    try:
+        from src.cache import BodhiCache
+        cache = BodhiCache(redis_url)
+        if cache.ping():
+            print("  [cache] Redis connected.")
+            return cache
+        print("  [cache] Redis ping failed — continuing without cache.")
+        return None
+    except Exception as e:
+        print(f"  [cache] Redis unavailable: {e} — continuing without cache.")
+        return None
+
+
+def _load_entity_context(company: str, cache, storage) -> str:
+    """Load company context: Redis (fast) -> NeonDB (fallback) -> empty."""
+    if not company:
+        return ""
+
+    if cache:
+        cached = cache.get_entity(company)
+        if cached:
+            return cached
+
+    if storage:
+        entity = storage.get_entity(company)
+        if entity:
+            ctx = (
+                f"{entity.get('description', '')} "
+                f"Hiring: {entity.get('hiring_patterns', '')} "
+                f"Tech: {entity.get('tech_stack', '')}"
+            ).strip()
+            if cache and ctx:
+                cache.set_entity(company, ctx)
+            return ctx
+
+    return ""
+
+
+def _flush_session(session_id, state, storage, cache):
+    """Flush session data to NeonDB and clean up Redis on session end."""
+    if storage:
+        try:
+            messages = []
+            for msg in state.get("messages", []):
+                role = "user" if isinstance(msg, HumanMessage) else "assistant"
+                content = msg.content if hasattr(msg, "content") else str(msg)
+                messages.append({"role": role, "content": _extract_text(content)})
+
+            storage.save_transcript_batch(
+                session_id, messages, state.get("current_phase", "unknown"),
+            )
+
+            scores = state.get("phase_scores", {})
+            overall = 0.0
+            total_q = 0
+            for phase, data in scores.items():
+                q = data.get("questions", 0)
+                s = data.get("total_score", 0)
+                storage.save_phase_result(
+                    session_id,
+                    phase,
+                    score=s / q if q else 0,
+                    question_count=q,
+                    difficulty_reached=state.get("difficulty_level", 3),
+                    feedback=data.get("feedback", []),
+                )
+                overall += s
+                total_q += q
+
+            avg_score = overall / total_q if total_q else None
+            storage.end_session(session_id, overall_score=avg_score)
+        except Exception as e:
+            print(f"  [storage] Flush error: {e}")
+
+    if cache:
+        try:
+            cache.delete_session(session_id)
+        except Exception:
+            pass
+
 
 def main() -> None:
     sarvam_key = os.getenv("SARVAM_API_KEY")
@@ -23,7 +131,45 @@ def main() -> None:
         print("Error: GOOGLE_API_KEY not set. Add it to .env")
         sys.exit(1)
 
-    from src.audio import get_input_device
+    print("Initializing Bodhi Phase 1...")
+    storage = _init_storage()
+    cache = _init_cache()
+
+    llm = create_llm(api_key=google_key, model="gemini-3.1-flash-lite-preview")
+    graph = build_interview_graph(llm)
+
+    session_id = uuid.uuid4().hex[:12]
+    candidate_name = os.getenv("BODHI_CANDIDATE", "Candidate")
+    target_company = os.getenv("BODHI_COMPANY", "")
+    target_role = os.getenv("BODHI_ROLE", "Software Engineer")
+
+    if not target_company:
+        target_company = input("Target company (or press Enter to skip): ").strip() or "General"
+
+    entity_context = _load_entity_context(target_company, cache, storage)
+    if entity_context:
+        print(f"  [entity] Loaded context for {target_company}")
+
+    if storage:
+        try:
+            storage.create_session(session_id, candidate_name, target_company, target_role)
+        except Exception as e:
+            print(f"  [storage] Session create error: {e}")
+
+    graph_config = {"configurable": {"thread_id": session_id}}
+
+    initial_state = {
+        "messages": [HumanMessage(content="Hello, I'm ready for my interview.")],
+        "session_id": session_id,
+        "candidate_name": candidate_name,
+        "target_company": target_company,
+        "target_role": target_role,
+        "current_phase": "intro",
+        "difficulty_level": 3,
+        "phase_scores": {},
+        "entity_context": entity_context,
+        "should_end": False,
+    }
 
     dev = get_input_device()
     if dev is not None:
@@ -33,26 +179,37 @@ def main() -> None:
         devs = sd.query_devices()
         name = devs[default_idx]["name"] if default_idx < len(devs) else "default"
         print(f"Using input device: {default_idx} ({name})")
-        print("  (Set BODHI_INPUT_DEVICE in .env to override. Run: python -c \"from src.audio import list_input_devices; list_input_devices()\" to list devices)")
+
     print("=" * 50)
-    print("Bodhi Phase 0 — Voice Loop")
-    print("Speak in Hindi, English, or Hinglish.")
+    print(f"Bodhi Phase 1 — Mock Interview")
+    print(f"Company: {target_company} | Role: {target_role}")
+    print(f"Speak in Hindi, English, or Hinglish.")
     if VOICE_MODE == "manual":
         print("Press Enter to start recording, Enter again to stop.")
     else:
-        print("Just speak — stops automatically after ~1s silence.")
+        print("Just speak — stops automatically after ~1.5s silence.")
     print("Ctrl+C to exit.")
     print("=" * 50)
 
-    history: list[dict] = []
+    result = graph.invoke(initial_state, config=graph_config)
+    intro_reply = _extract_text(
+        result["messages"][-1].content
+        if result["messages"] and hasattr(result["messages"][-1], "content")
+        else ""
+    )
+    if intro_reply:
+        print(f"  Bodhi: {intro_reply}")
+        print("Speaking...")
+        speak(intro_reply, api_key=sarvam_key, target_language_code="hi-IN", speaker="shubh", play=True)
+        print("Done.")
 
+    consecutive_errors = 0
     while True:
         try:
             device = get_input_device()
             if VOICE_MODE == "manual":
                 audio_bytes = record_until_enter(device=device)
             else:
-                # Natural: VAD-based, no Enter. Brief delay after previous TTS to avoid echo.
                 time.sleep(0.5)
                 audio_bytes = record_until_silence(
                     wait_for_enter=False,
@@ -60,6 +217,7 @@ def main() -> None:
                     vad_aggressiveness=3,
                     device=device,
                 )
+            consecutive_errors = 0
 
             if len(audio_bytes) < 1000:
                 print("(No audio captured — try again)")
@@ -70,8 +228,7 @@ def main() -> None:
                 audio_bytes,
                 api_key=sarvam_key,
                 model="saaras:v3",
-                mode="codemix",
-                language_code="hi-IN",
+                language_code="en-IN",
             )
             transcript = (transcript or "").strip()
             if not transcript:
@@ -79,40 +236,68 @@ def main() -> None:
                 continue
 
             print(f"  You: {transcript}")
-            history.append({"role": "user", "content": transcript})
 
             print("Thinking...")
-            reply = get_reply(
-                transcript,
-                api_key=google_key,
-                history=history[:-1],
-                model="gemini-3.1-flash-lite-preview",
+            result = graph.invoke(
+                {"messages": [HumanMessage(content=transcript)]},
+                config=graph_config,
             )
-            reply = (reply or "").strip()
+
+            last_msg = result["messages"][-1] if result["messages"] else None
+            reply = ""
+            if last_msg and hasattr(last_msg, "content"):
+                reply = _extract_text(last_msg.content).strip()
+
             if not reply:
                 print("(No response from LLM)")
                 continue
 
-            print(f"  Bodhi: {reply}")
-            history.append({"role": "assistant", "content": reply})
+            current_phase = result.get("current_phase", "?")
+            print(f"  [{current_phase}] Bodhi: {reply}")
+
+            if result.get("should_end"):
+                print("Speaking...")
+                speak(reply, api_key=sarvam_key, target_language_code="hi-IN", speaker="shubh", play=True)
+                print("\n--- Interview Complete ---")
+                _flush_session(session_id, result, storage, cache)
+                break
+
+            if cache:
+                try:
+                    cache.save_session_state(session_id, {
+                        "phase": current_phase,
+                        "difficulty": result.get("difficulty_level", 3),
+                        "scores": result.get("phase_scores", {}),
+                    })
+                except Exception:
+                    pass
 
             print("Speaking...")
-            speak(
-                reply,
-                api_key=sarvam_key,
-                target_language_code="hi-IN",
-                speaker="shubh",
-                play=True,
-            )
+            speak(reply, api_key=sarvam_key, target_language_code="hi-IN", speaker="shubh", play=True)
             print("Done.")
 
         except KeyboardInterrupt:
-            print("\nBye.")
+            print("\n--- Session interrupted ---")
+            try:
+                last_state = graph.get_state(graph_config)
+                if last_state and last_state.values:
+                    _flush_session(session_id, last_state.values, storage, cache)
+                print("Session data saved. Bye.")
+            except Exception:
+                print("Could not flush session — exiting.")
             break
         except Exception as e:
+            consecutive_errors += 1
             print(f"Error: {e}")
             import traceback
             traceback.print_exc()
+            if consecutive_errors >= 3:
+                print("\n3 consecutive errors — likely a device issue.")
+                print("Check your mic connection or change BODHI_INPUT_DEVICE in .env")
+                break
+
+    if storage:
+        storage.close()
 
 
 if __name__ == "__main__":

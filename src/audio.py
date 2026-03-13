@@ -42,10 +42,11 @@ def record_until_silence(
     sample_rate: int = SAMPLE_RATE,
     silence_duration_ms: float = 1000,
     vad_aggressiveness: int = 3,
-    max_duration_sec: float = 30.0,
+    max_duration_sec: float = 120.0,
     wait_for_enter: bool = False,
     min_recording_sec: float = 0.4,
     speech_confirm_frames: int = 5,
+    energy_threshold: float = 80.0,
     device=None,
 ) -> bytes:
     """
@@ -113,6 +114,9 @@ def record_until_silence(
                 continue
 
             is_speech = vad.is_speech(frame, sample_rate)
+            rms = np.sqrt(np.mean(chunk.astype(np.float32) ** 2))
+            if rms < energy_threshold:
+                is_speech = False
 
             if is_speech:
                 consecutive_speech += 1
