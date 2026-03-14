@@ -8,11 +8,16 @@ from langgraph.graph.message import add_messages
 PHASES = ("intro", "technical", "behavioral", "dsa", "project", "wrapup")
 
 
-class InterviewState(TypedDict):
+class InterviewState(TypedDict, total=False):
     """LangGraph state for a single interview session.
 
     Tier-1 (edge) state — lives entirely in MemorySaver during the
     session. Flushed to Redis/NeonDB on phase transitions and session end.
+
+    interview_mode values:
+      "standard"  — classic company+role-based interview (default)
+      "option_a"  — resume-based personal interview
+      "option_b"  — company/role-targeted with JD gap analysis
     """
 
     messages: Annotated[list[AnyMessage], add_messages]
@@ -30,3 +35,8 @@ class InterviewState(TypedDict):
     # ── Pre-generated curriculum queue ────────────────────────────
     queued_questions: dict        # {"technical": ["Q1", "Q2"], "dsa": ["Q1", "Q2"]}
     target_question: str          # The specific question Bodhi should ask next, or ""
+    # ── Resume-based modes ─────────────────────────────────────────
+    interview_mode: str           # "standard" | "option_a" | "option_b"
+    candidate_profile: dict       # parsed resume profile (option_a / option_b)
+    jd_context: str               # job description text (option_b)
+    gap_map: dict                 # {strong_match, partial_match, gaps} (option_b, internal)

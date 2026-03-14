@@ -55,10 +55,19 @@ export default function InterviewPage() {
   const [violations, setViolations] = useState<Violation[]>([]);
   const [cameraError, setCameraError] = useState("");
 
-  const [startForm, setStartForm] = useState({
+  const [startForm, setStartForm] = useState<{
+    candidate_name: string;
+    company: string;
+    role: string;
+    mode: "standard" | "option_a" | "option_b";
+    user_id: string;
+    jd_text: string;
+  }>({
     candidate_name: "",
     company: "",
     role: "Software Engineer",
+    mode: "standard",
+    user_id: "",
     jd_text: "",
   });
 
@@ -667,14 +676,48 @@ export default function InterviewPage() {
             }
             className={inputCls}
           />
+          <div className="flex flex-col gap-3">
+            <select
+              value={startForm.mode}
+              onChange={(e) =>
+                setStartForm({
+                  ...startForm,
+                  mode: e.target.value as "standard" | "option_a" | "option_b",
+                })
+              }
+              className={inputCls}
+            >
+              <option value="standard">Standard (Company + Role + JD)</option>
+              <option value="option_a">Resume Based (Personalized)</option>
+              <option value="option_b">JD Gap Analysis (Resume + JD)</option>
+            </select>
+
+            {startForm.mode !== "standard" && (
+              <input
+                placeholder="User ID (from Resumes tab)"
+                value={startForm.user_id}
+                onChange={(e) =>
+                  setStartForm({ ...startForm, user_id: e.target.value })
+                }
+                className={inputCls}
+                required={startForm.mode !== "standard"}
+              />
+            )}
+          </div>
+
           <textarea
-            placeholder="Paste Job Description / JD (optional — helps customize interview questions)"
+            placeholder={
+              startForm.mode === "option_b"
+                ? "Paste Job Description here (Required for Gap Analysis)"
+                : "Paste Job Description / JD (optional — helps customize interview questions)"
+            }
             value={startForm.jd_text}
             onChange={(e) =>
               setStartForm({ ...startForm, jd_text: e.target.value })
             }
             rows={4}
             className={inputCls + " resize-y"}
+            required={startForm.mode === "option_b"}
           />
           <button
             type="submit"

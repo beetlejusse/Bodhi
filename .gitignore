@@ -9,7 +9,7 @@ venv/
 .cursor
 bodhi.db
 *.md
-.pt
+*.pt
 yolov8l.pt
 yolov8m.pt
 yolov8n.pt
