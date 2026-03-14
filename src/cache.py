@@ -84,3 +84,18 @@ class BodhiCache:
         """Cache suggested topics extracted from uploaded documents (24h TTL)."""
         key = f"topics:{company.lower().strip()}:{role.lower().strip()}"
         self.r.setex(key, ttl, json.dumps(topics))
+
+    # ── Pre-generated Question Queues ─────────────────────────────
+
+    def get_question_queue(self, session_id: str, phase: str) -> list[str] | None:
+        """Return the pre-generated question queue for a session phase."""
+        key = f"interview:{session_id}:queue:{phase}"
+        raw = self.r.get(key)
+        if raw is None:
+            return None
+        return json.loads(raw)
+
+    def set_question_queue(self, session_id: str, phase: str, questions: list[str], ttl: int = 7200) -> None:
+        """Store the pre-generated question queue for a session phase (2h TTL)."""
+        key = f"interview:{session_id}:queue:{phase}"
+        self.r.setex(key, ttl, json.dumps(questions))

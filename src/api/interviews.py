@@ -89,6 +89,78 @@ def _load_suggested_topics(company: str, role: str, cache) -> str:
     return "\n".join(f"  - {t}" for t in topics)
 
 
+_CURRICULUM_PROMPT = """\
+You are an expert technical interviewer preparing a custom interview curriculum.
+Generate exactly 5 targeted questions for each of the following 3 phases for a {role} at {company}.
+Use the provided company profile (tech stack, hiring patterns, description) to make the questions highly specific and realistic.
+
+COMPANY PROFILE:
+{profile_text}
+
+OUTPUT FORMAT:
+Return a valid JSON object with EXACTLY three keys: "intro", "dsa", "project".
+Each key must contain a list of exactly 5 question strings.
+DO NOT include any markdown blocks (like ```json), just raw JSON.
+"""
+
+def generate_interview_curriculum(company: str, role: str, storage: BodhiStorage) -> dict:
+    from src.services.llm import create_llm, _extract_text
+    from langchain_core.messages import HumanMessage
+    import json
+    import logging
+    log = logging.getLogger("bodhi.api.stream")
+    
+    profile_parts = []
+    try:
+        if storage:
+            entity = storage.get_entity(company)
+            if entity:
+                profile_parts.append(f"Company Description: {entity.get('description', '')}")
+                profile_parts.append(f"Company Tech Stack: {entity.get('tech_stack', '')}")
+                profile_parts.append(f"Company Hiring Patterns: {entity.get('hiring_patterns', '')}")
+                
+            profiles = storage.get_company_profiles(company)
+            for p in profiles:
+                if p.get("role", "").lower() == role.lower():
+                    profile_parts.append(f"Role Specific Description: {p.get('description', '')}")
+                    profile_parts.append(f"Role Tech Stack: {p.get('tech_stack', '')}")
+                    profile_parts.append(f"Role Hiring Patterns: {p.get('hiring_patterns', '')}")
+                    break
+    except Exception as e:
+        log.error(f"Failed to fetch profile from DB: {e}")
+        
+    profile_text = "\n".join(filter(None, profile_parts))
+    if not profile_text.strip():
+        profile_text = "No specific company data available. Generate standard questions."
+        
+    llm = create_llm(api_key=os.getenv("GOOGLE_API_KEY", ""))
+    prompt = _CURRICULUM_PROMPT.format(role=role, company=company, profile_text=profile_text)
+    
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+        raw = _extract_text(response.content).strip()
+        if raw.startswith("```json"): raw = raw[7:]
+        if raw.startswith("```"): raw = raw[3:]
+        if raw.endswith("```"): raw = raw[:-3]
+        
+        data = json.loads(raw.strip())
+        
+        # DEBUG output to verify ingestion is working!
+        log.info("==================================================")
+        log.info(f"PRE-GENERATED CURRICULUM FOR {company} {role}")
+        log.info(json.dumps(data, indent=2))
+        log.info("==================================================")
+        
+        return {
+            "intro": data.get("intro", [])[:5],
+            "dsa": data.get("dsa", [])[:5],
+            "project": data.get("project", [])[:5],
+        }
+    except Exception as e:
+        log.error(f"Curriculum generation failed: {e}")
+        return {"intro": [], "dsa": [], "project": []}
+
+
 @router.post("", response_model=InterviewStartResponse, status_code=201)
 async def start_interview(
     body: InterviewStartRequest,
@@ -101,6 +173,12 @@ async def start_interview(
 
     entity_context = _load_entity_context(body.company, body.role, cache, storage)
     suggested_topics = _load_suggested_topics(body.company, body.role, cache)
+    
+    # 1) Pre-generate 3-phase curriculum based on the extracted profile
+    curriculum = generate_interview_curriculum(body.company, body.role, storage)
+    if cache:
+        for phase, questions in curriculum.items():
+            cache.set_question_queue(session_id, phase, questions)
 
     try:
         storage.create_session(session_id, body.candidate_name, body.company, body.role)
@@ -468,6 +546,12 @@ async def start_interview_stream(
     entity_context = _load_entity_context(body.company, body.role, cache, storage)
     suggested_topics = _load_suggested_topics(body.company, body.role, cache)
 
+    # 1) Pre-generate 3-phase curriculum based on the extracted profile
+    curriculum = generate_interview_curriculum(body.company, body.role, storage)
+    if cache:
+        for phase, questions in curriculum.items():
+            cache.set_question_queue(session_id, phase, questions)
+
     try:
         storage.create_session(session_id, body.candidate_name, body.company, body.role)
     except Exception:
@@ -498,11 +582,16 @@ async def start_interview_stream(
     if not sarvam_key or not greeting:
         raise HTTPException(500, "TTS not available")
 
+    # Serialize curriculum for frontend debugging
+    import json
+    curriculum_json = json.dumps(curriculum) if curriculum else "{}"
+
     headers = _stream_headers(
         Session=session_id,
         Text=greeting,
         Phase="intro",
         End="false",
+        Curriculum=curriculum_json,
     )
 
     return StreamingResponse(

@@ -14,7 +14,7 @@ from src.api.models import (
     UploadResponse,
 )
 from src.cache import BodhiCache
-from src.rag import extract_topics, ingest_document, retrieve_context
+from src.rag import extract_topics, extract_profile_data, ingest_document, retrieve_context
 from src.storage import BodhiStorage
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
@@ -68,16 +68,41 @@ async def upload_file(
     )
 
     topics: list[str] = []
+    profile_data: dict | None = None
     try:
+        # Also extract topics (backward compat)
         topics = extract_topics(text, company, role)
         if topics and cache:
             existing = cache.get_topics(company, role) or []
             merged = list(dict.fromkeys(existing + topics))[:20]
             cache.set_topics(company, role, merged)
-    except Exception:
-        pass
 
-    return UploadResponse(chunks_ingested=n, topics_extracted=topics)
+        # Extract structured profile data and upsert to database
+        profile_data = extract_profile_data(text, company, role)
+        if profile_data and (profile_data.get("tech_stack") or profile_data.get("hiring_patterns") or profile_data.get("description")):
+            storage.upsert_company_profile(
+                company_name=company,
+                role=role,
+                description=profile_data.get("description", ""),
+                hiring_patterns=profile_data.get("hiring_patterns", ""),
+                tech_stack=profile_data.get("tech_stack", ""),
+                contributed_by="bodhi-upload",
+            )
+            storage.upsert_entity(
+                company_name=company,
+                description=profile_data.get("description", ""),
+                hiring_patterns=profile_data.get("hiring_patterns", ""),
+                tech_stack=profile_data.get("tech_stack", ""),
+                contributed_by="bodhi-upload",
+            )
+    except Exception as e:
+        print(f"Error during extraction step: {e}")
+
+    return UploadResponse(
+        chunks_ingested=n, 
+        topics_extracted=topics,
+        profile_extracted=profile_data
+    )
 
 
 @router.get("/search", response_model=list[SearchResult])

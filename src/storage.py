@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS company_documents (
     chunk_text      TEXT NOT NULL,
     chunk_index     INT NOT NULL,
     source_label    TEXT DEFAULT '',
-    embedding       vector(768) NOT NULL,
+    embedding       vector(3072) NOT NULL,
     contributed_by  TEXT DEFAULT '',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -136,6 +136,27 @@ class BodhiStorage:
         self._ensure_conn()
         with self.conn.cursor() as cur:
             cur.execute(_DDL)
+
+    def migrate_embedding_dimension(self) -> None:
+        """One-time migration: drop and recreate company_documents for new vector(3072) dim.
+        WARNING: This drops all existing embedded document data. Run once after upgrading embeddings."""
+        self._ensure_conn()
+        with self.conn.cursor() as cur:
+            cur.execute("DROP TABLE IF EXISTS company_documents;")
+            cur.execute("""
+                CREATE TABLE company_documents (
+                    id              SERIAL PRIMARY KEY,
+                    company_name    TEXT NOT NULL,
+                    role            TEXT NOT NULL,
+                    chunk_text      TEXT NOT NULL,
+                    chunk_index     INT NOT NULL,
+                    source_label    TEXT DEFAULT '',
+                    embedding       vector(3072) NOT NULL,
+                    contributed_by  TEXT DEFAULT '',
+                    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+                CREATE INDEX IF NOT EXISTS idx_company_docs_lookup ON company_documents(company_name, role);
+            """)
 
     def close(self) -> None:
         self.conn.close()

@@ -123,6 +123,62 @@ def extract_topics(
     return topics[:15]
 
 
+_PROFILE_PROMPT = """\
+You are an expert technical recruiter analyzing a document about a {role} position {company_clause}.
+Extract the following exact fields into a valid JSON object ONLY:
+- "description": A concise overview of what the company/role entails based on the text.
+- "tech_stack": A comma-separated list of the core technologies mentioned.
+- "hiring_patterns": Any specific interview rounds, types of questions, or candidate traits they look for.
+
+If any field is completely absent from the text, use an empty string.
+Output ONLY standard JSON, with no markdown code blocks or additional text.
+
+DOCUMENT:
+{text}
+"""
+
+def extract_profile_data(
+    text: str,
+    company: str,
+    role: str,
+) -> dict:
+    """Use Gemini to extract structured company/role profile data from document text."""
+    if not text or len(text) < 50:
+        return {"description": "", "tech_stack": "", "hiring_patterns": ""}
+
+    import json
+    from src.services.llm import create_llm, _extract_text
+    from langchain_core.messages import HumanMessage
+
+    company_clause = f"at {company}" if company and company.lower() != "general" else "(general)"
+    llm = create_llm(api_key=os.getenv("GOOGLE_API_KEY", ""))
+    prompt = _PROFILE_PROMPT.format(
+        role=role, company_clause=company_clause, text=text[:16000],
+    )
+    response = llm.invoke([HumanMessage(content=prompt)])
+    raw = _extract_text(response.content).strip()
+
+    # Clean up standard markdown json formatting if present
+    if raw.startswith("```json"):
+        raw = raw[7:]
+    if raw.startswith("```"):
+        raw = raw[3:]
+    if raw.endswith("```"):
+        raw = raw[:-3]
+    raw = raw.strip()
+
+    try:
+        data = json.loads(raw)
+        return {
+            "description": data.get("description", ""),
+            "tech_stack": data.get("tech_stack", ""),
+            "hiring_patterns": data.get("hiring_patterns", ""),
+        }
+    except Exception as e:
+        print(f"Failed to parse profile JSON: {e}\nRaw output: {raw}")
+        return {"description": "", "tech_stack": "", "hiring_patterns": ""}
+
+
 _EXTRACT_PROMPT = """\
 You are an analyst extracting company-specific intelligence from an interview transcript.
 

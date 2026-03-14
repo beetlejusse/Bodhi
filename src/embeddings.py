@@ -1,4 +1,10 @@
-"""Embedding generation using Google text-embedding-004."""
+"""Embedding generation using Google gemini-embedding-001 (3072-dim).
+
+Note: text-embedding-004 was deprecated by Google on 2026-01-14.
+The replacement is gemini-embedding-001, which outputs 3072-dim vectors.
+If you have existing data in `company_documents`, you must DROP and recreate
+the table (or re-run migrations) because the vector dimension changed from 768 to 3072.
+"""
 
 import os
 
@@ -13,7 +19,7 @@ def _get_model() -> GoogleGenerativeAIEmbeddings:
     if _model is None:
         api_key = os.getenv("GOOGLE_API_KEY", "")
         _model = GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
+            model="models/gemini-embedding-001",
             google_api_key=api_key,
         )
     return _model

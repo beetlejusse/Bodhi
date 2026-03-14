@@ -72,7 +72,8 @@ class IngestResponse(BaseModel):
 
 class UploadResponse(BaseModel):
     chunks_ingested: int
-    topics_extracted: list[str]
+    topics_extracted: list[str] = []
+    profile_extracted: dict | None = None
 
 
 class SearchRequest(BaseModel):
