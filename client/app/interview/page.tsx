@@ -559,30 +559,16 @@ export default function InterviewPage() {
     try { const info = await getSession(sessionIdRef.current); setSessionInfo(info); } catch {}
   };
 
-  // ── Step 1: form submit → init camera + load models → show setup UI ────────
+  // ── Form submit → start interview directly ─────────────────────────────────
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setPhase("processing");
-    try {
-      await initCamera();
-      setPhase("setup");
-    } catch (err) {
-      setError(String(err));
-      setPhase("idle");
-    }
-  };
-
-  // ── Step 2: setup complete → start the actual interview ───────────────────
-
-  const handleSetupComplete = async () => {
-    setError("");
-    setPhase("processing");
     phaseRef.current = "processing";
 
     try {
-      await initMic();
+      await Promise.all([initCamera(), initMic()]);
 
       const res = await startInterviewStream(startForm);
       if (!res.ok) throw new Error(`${res.status}: ${await res.text().catch(() => res.statusText)}`);
@@ -599,7 +585,7 @@ export default function InterviewPage() {
       startListening();
     } catch (err) {
       setError(String(err));
-      setPhase("setup");
+      setPhase("idle");
     }
   };
 
@@ -648,19 +634,6 @@ export default function InterviewPage() {
       endProctoringSession();
     };
   }, [cleanupMic, cleanupCamera, endProctoringSession]);
-
-  // Enumerate devices when in setup mode
-  useEffect(() => {
-    if (phase === "setup") {
-      navigator.mediaDevices.enumerateDevices().then((devices) => {
-        const audioInputs = devices.filter((d) => d.kind === "audioinput");
-        setAudioDevices(audioInputs);
-        if (audioInputs.length > 0 && !selectedAudioDevice) {
-          setSelectedAudioDevice(audioInputs[0].deviceId);
-        }
-      }).catch(console.warn);
-    }
-  }, [phase, selectedAudioDevice]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -731,31 +704,10 @@ export default function InterviewPage() {
             <>
               <input placeholder="Company" value={startForm.company}
                 onChange={(e) => setStartForm({ ...startForm, company: e.target.value })} className={inputCls} />
-              <input placeholder="Role" value={startForm.role}
-                onChange={(e) => setStartForm({ ...startForm, role: e.target.value })} className={inputCls} />
+              <input placeholder="Job Title" value={startForm.job_title}
+                onChange={(e) => setStartForm({ ...startForm, job_title: e.target.value })} className={inputCls} />
             </>
           )}
-
-          {startForm.mode === "option_b" && (
-            <textarea placeholder="Job Description (paste full JD text here)" value={startForm.jd_text}
-              onChange={(e) => setStartForm({ ...startForm, jd_text: e.target.value })}
-              className={`${inputCls} min-h-32`} required />
-          )}
-
-          {/* Microphone selector */}
-          <div>
-            <label className="block text-xs text-zinc-400 mb-1">Microphone</label>
-            <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)} className={inputCls}>
-              {micDevices.length === 0 && (
-                <option value="">Default microphone</option>
-              )}
-              {micDevices.map((d, i) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label || `Microphone ${i + 1}`}
-                </option>
-              ))}
-            </select>
-          </div>
 
           <button type="submit"
             className="w-full rounded border border-white py-2.5 text-sm font-medium text-white transition hover:bg-white hover:text-black">
@@ -766,86 +718,6 @@ export default function InterviewPage() {
     );
   }
 
-  // ── Setup: consent + reference photo ──────────────────────────────────────
-  if (phase === "setup") {
-    const hasVerification = consentAccepted && !!referencePhotoB64;
-    return (
-      <div className="mx-auto max-w-lg space-y-5 pt-8">
-        <div>
-          <h1 className="text-2xl font-bold">Identity Verification Setup</h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            Optionally set up identity verification before starting.
-          </p>
-        </div>
-
-        {error && (
-          <div className="rounded border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">{error}</div>
-        )}
-
-        {/* Live camera preview (camera already on) */}
-        <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-black">
-          <video ref={videoRef} muted playsInline className="w-full" style={{ transform: "scaleX(-1)" }} />
-          {cameraError && <p className="px-3 py-2 text-xs text-zinc-500">{cameraError}</p>}
-        </div>
-
-        {/* Step 1: Consent */}
-        <ConsentNotice accepted={consentAccepted} onAccept={setConsentAccepted} />
-
-        {/* Step 2: Audio Device Setup */}
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
-          <h2 className="mb-2 text-sm font-semibold">Microphone</h2>
-          <select 
-            value={selectedAudioDevice} 
-            onChange={(e) => {
-              setSelectedAudioDevice(e.target.value);
-              setMicDeviceId(e.target.value); // Sync upstream state
-            }}
-            className="w-full rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-zinc-200"
-          >
-            {audioDevices.length === 0 && <option value="">Loading devices...</option>}
-            {audioDevices.map((d) => (
-               <option key={d.deviceId} value={d.deviceId}>
-                 {d.label || `Microphone ${d.deviceId.slice(0, 5)}...`}
-               </option>
-            ))}
-          </select>
-          <p className="mt-2 text-xs text-zinc-500">
-            Please ensure you select your correct working microphone (e.g., your headset if using Bluetooth).
-          </p>
-        </div>
-
-        {/* Step 3: Reference photo */}
-        <ReferencePhotoCapture
-          onReady={setReferencePhotoB64}
-          modelsLoading={faceVerification.modelsLoading}
-          modelsLoaded={faceVerification.modelsLoaded}
-          setReferenceFromFile={faceVerification.setReferenceFromFile}
-          setReferenceFromWebcam={faceVerification.setReferenceFromWebcam}
-          videoRef={videoRef}
-        />
-
-        <div className="flex gap-3">
-          <button type="button" onClick={() => { cleanupCamera(); setPhase("idle"); }}
-            className="flex-1 rounded border border-[var(--border)] py-2.5 text-sm text-zinc-400 hover:text-white transition">
-            ← Back
-          </button>
-          <button type="button" onClick={handleSetupComplete}
-            className="flex-1 rounded border border-white py-2.5 text-sm font-medium text-white transition hover:bg-white hover:text-black">
-            {hasVerification ? "Start Interview" : "Skip & Start →"}
-          </button>
-        </div>
-
-        {!hasVerification && (
-          <p className="text-center text-xs text-zinc-500">
-            Identity verification is optional — you can skip it and start immediately.
-          </p>
-        )}
-
-        {/* Hidden canvas used by ReferencePhotoCapture */}
-        <canvas ref={canvasRef} className="hidden" />
-      </div>
-    );
-  }
   // ── Active interview ───────────────────────────────────────────────────────
   return (
     <div className="flex h-[calc(100vh-80px)] gap-4">
