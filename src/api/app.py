@@ -112,6 +112,7 @@ app.add_middleware(
         "X-Bodhi-Session",
         "X-Bodhi-Transcript",
         "X-Bodhi-Curriculum",
+        "X-Bodhi-Sentiment",
     ],
 )
 

@@ -259,6 +259,16 @@ export const endInterview = (sessionId: string) =>
 
 // ── Streaming endpoints ─────────────────────────────────────────
 
+/** Sentiment analysis result returned with each audio turn. */
+export interface SentimentData {
+  emotion: "confident" | "hesitant" | "nervous" | "enthusiastic" | "neutral";
+  filler_rate: number;      // filler words per 100 words
+  speaking_rate_wpm: number;
+  energy_level: "low" | "medium" | "high";
+  hedge_count: number;
+  score: number;            // classifier confidence 0–1
+}
+
 /** Parsed metadata from streaming response headers. */
 export interface StreamMeta {
   session?: string;
@@ -266,6 +276,7 @@ export interface StreamMeta {
   transcript?: string;
   phase?: string;
   shouldEnd?: boolean;
+  sentiment?: SentimentData;
 }
 
 /** Extract X-Bodhi-* headers from a streaming response, URL-decoding values. */
@@ -274,12 +285,18 @@ export function parseStreamHeaders(res: Response): StreamMeta {
     const v = res.headers.get(`X-Bodhi-${key}`);
     return v ? decodeURIComponent(v) : undefined;
   };
+  const sentimentRaw = d("Sentiment");
+  let sentiment: SentimentData | undefined;
+  if (sentimentRaw) {
+    try { sentiment = JSON.parse(sentimentRaw) as SentimentData; } catch {}
+  }
   return {
     session: d("Session"),
     text: d("Text"),
     transcript: d("Transcript"),
     phase: d("Phase"),
     shouldEnd: d("End") === "true",
+    sentiment,
   };
 }
 

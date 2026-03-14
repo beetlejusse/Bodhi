@@ -960,6 +960,7 @@ async def send_audio_stream(
         Transcript=transcript,
         Phase="streaming",
         End="false",
+        Sentiment=_json.dumps(sentiment.to_dict()),
     )
 
     return StreamingResponse(

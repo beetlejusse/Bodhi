@@ -6,6 +6,7 @@ import {
   type SessionEnd,
   type StreamMeta,
   type CandidateProfile,
+  type SentimentData,
   startInterviewStream,
   sendAudioStream,
   parseStreamHeaders,
@@ -14,13 +15,9 @@ import {
   uploadResume,
 } from "@/lib/api";
 import { encodeWav } from "@/lib/wav";
-import { useFaceVerification } from "@/hooks/useFaceVerification";
-import { ConsentNotice } from "@/components/ConsentNotice";
-import { ReferencePhotoCapture } from "@/components/ReferencePhotoCapture";
 
 type Phase =
   | "idle"       // form
-  | "setup"      // consent + reference photo capture (camera already on)
   | "listening"
   | "recording"
   | "processing"
@@ -40,19 +37,16 @@ interface Violation {
   timestamp: string;
 }
 
+interface SentimentEntry extends SentimentData {
+  timestamp: number; // Date.now()
+}
+
 const SILENCE_THRESHOLD = 0.015;
 const SILENCE_DURATION_MS = 1500;
 const SPEECH_CONFIRM_FRAMES = 5;
 const MIN_RECORD_MS = 500;
 const FRAME_INTERVAL_MS = 2500;
 
-// ── Identity verification config (admin-tunable via env) ──────────────────────
-const ID_CHECK_INTERVAL_MS =
-  Number(process.env.NEXT_PUBLIC_ID_CHECK_INTERVAL ?? 20_000);
-const ID_SIMILARITY_THRESHOLD =
-  Number(process.env.NEXT_PUBLIC_ID_SIMILARITY_THRESHOLD ?? 0.6);
-const ID_MAX_VIOLATIONS =
-  Number(process.env.NEXT_PUBLIC_ID_MAX_VIOLATIONS ?? 3);
 
 export default function InterviewPage() {
   const [sessionId, setSessionId] = useState("");
@@ -69,9 +63,8 @@ export default function InterviewPage() {
   const [violations, setViolations] = useState<Violation[]>([]);
   const [cameraError, setCameraError] = useState("");
 
-  // Setup-step state
-  const [consentAccepted, setConsentAccepted] = useState(false);
-  const [referencePhotoB64, setReferencePhotoB64] = useState<string | null>(null);
+  // Sentiment state
+  const [sentimentHistory, setSentimentHistory] = useState<SentimentEntry[]>([]);
 
   const [startForm, setStartForm] = useState<{
     candidate_name: string;
@@ -115,59 +108,6 @@ export default function InterviewPage() {
   const proctoringWsRef = useRef<WebSocket | null>(null);
   const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const frameCounterRef = useRef(0);
-
-  // ── Face verification ─────────────────────────────────────────────────────
-
-  const handleFaceViolation = useCallback(
-    (type: "identity_mismatch" | "no_face_detected", score: number) => {
-      // Show in UI
-      const v: Violation = {
-        violation_type: type,
-        severity: "HIGH",
-        message:
-          type === "identity_mismatch"
-            ? `Identity mismatch (score: ${score.toFixed(2)})`
-            : "No face detected in frame",
-        timestamp: new Date().toISOString(),
-      };
-      setViolations((prev) => [...prev, v].slice(-20));
-
-      // Report to backend via WebSocket (metadata only — no image)
-      const ws = proctoringWsRef.current;
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "client_violation",
-            violation_type: type,
-            metadata: { confidence_score: score, source: "face_api_client" },
-          })
-        );
-      }
-    },
-    []
-  );
-
-  const handleFaceFlag = useCallback(() => {
-    setSessionFlagged(true);
-    const ws = proctoringWsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "client_violation",
-          violation_type: "identity_mismatch",
-          metadata: { flagged: true, source: "face_api_client" },
-        })
-      );
-    }
-  }, []);
-
-  const faceVerification = useFaceVerification(videoRef, {
-    checkIntervalMs: ID_CHECK_INTERVAL_MS,
-    similarityThreshold: ID_SIMILARITY_THRESHOLD,
-    maxConsecutiveViolations: ID_MAX_VIOLATIONS,
-    onViolation: handleFaceViolation,
-    onFlag: handleFaceFlag,
-  });
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
   useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
@@ -403,33 +343,29 @@ export default function InterviewPage() {
   // ── Proctoring WebSocket ───────────────────────────────────────────────────
 
   const connectProctoringWs = useCallback(
-    (sid: string, referenceImageB64: string) => {
+    (sid: string) => {
       const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
       const wsBase = apiBase.replace(/^http/, "ws");
       const ws = new WebSocket(`${wsBase}/api/proctoring/ws/${sid}`);
       proctoringWsRef.current = ws;
 
       ws.onopen = () => {
-        ws.send(JSON.stringify({ type: "enroll", candidate_id: sid, image: referenceImageB64 }));
+        setProctoringActive(true);
+        frameIntervalRef.current = setInterval(() => {
+          if (proctoringWsRef.current?.readyState !== WebSocket.OPEN) return;
+          const frame = captureFrame();
+          if (!frame) return;
+          frameCounterRef.current += 1;
+          proctoringWsRef.current.send(
+            JSON.stringify({ type: "frame", frame_id: `frame-${frameCounterRef.current}`, frame })
+          );
+        }, FRAME_INTERVAL_MS);
       };
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          if (msg.type === "enrolled") {
-            if (msg.success) {
-              setProctoringActive(true);
-              frameIntervalRef.current = setInterval(() => {
-                if (proctoringWsRef.current?.readyState !== WebSocket.OPEN) return;
-                const frame = captureFrame();
-                if (!frame) return;
-                frameCounterRef.current += 1;
-                proctoringWsRef.current.send(
-                  JSON.stringify({ type: "frame", frame_id: `frame-${frameCounterRef.current}`, frame })
-                );
-              }, FRAME_INTERVAL_MS);
-            }
-          } else if (msg.type === "frame_result") {
+          if (msg.type === "frame_result") {
             if (msg.has_violations && msg.violations?.length > 0)
               setViolations((prev) => [...prev, ...msg.violations].slice(-20));
             if (msg.session_flagged) setSessionFlagged(true);
@@ -447,14 +383,13 @@ export default function InterviewPage() {
 
   const endProctoringSession = useCallback(() => {
     if (frameIntervalRef.current) { clearInterval(frameIntervalRef.current); frameIntervalRef.current = null; }
-    faceVerification.stopVerification();
     const ws = proctoringWsRef.current;
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "end_session" }));
       ws.close();
     }
     proctoringWsRef.current = null;
-  }, [faceVerification]);
+  }, []);
 
   // ── VAD loop ───────────────────────────────────────────────────────────────
 
@@ -532,6 +467,7 @@ export default function InterviewPage() {
       const meta: StreamMeta = parseStreamHeaders(res);
       if (meta.transcript) setTranscript((prev) => [...prev, { speaker: "user", text: meta.transcript! }]);
       if (meta.text) setTranscript((prev) => [...prev, { speaker: "bodhi", text: meta.text!, phase: meta.phase }]);
+      if (meta.sentiment) setSentimentHistory((prev) => [...prev, { ...meta.sentiment!, timestamp: Date.now() }].slice(-20));
       scrollDown();
 
       setPhase("speaking");
@@ -560,45 +496,25 @@ export default function InterviewPage() {
     try { const info = await getSession(sessionIdRef.current); setSessionInfo(info); } catch {}
   };
 
-  // ── Step 1: form submit → init camera + load models → show setup UI ────────
+  // ── Form submit → start interview directly ─────────────────────────────────
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setPhase("processing");
-    try {
-      await initCamera();
-      setPhase("setup");
-    } catch (err) {
-      setError(String(err));
-      setPhase("idle");
-    }
-  };
-
-  // ── Step 2: setup complete → start the actual interview ───────────────────
-
-  const handleSetupComplete = async () => {
-    setError("");
-    setPhase("processing");
     phaseRef.current = "processing";
 
     try {
-      await initMic();
+      await Promise.all([initCamera(), initMic()]);
+
       const res = await startInterviewStream(startForm);
       if (!res.ok) throw new Error(`${res.status}: ${await res.text().catch(() => res.statusText)}`);
 
       const meta: StreamMeta = parseStreamHeaders(res);
-      if (meta.session) setSessionId(meta.session);
+      if (meta.session) { setSessionId(meta.session); sessionIdRef.current = meta.session; }
       if (meta.text) setTranscript([{ speaker: "bodhi", text: meta.text, phase: "intro" }]);
 
-      if (meta.session && referencePhotoB64) {
-        // Server-side proctoring (DeepFace) — only if reference photo was captured
-        connectProctoringWs(meta.session, referencePhotoB64);
-        // Client-side verification starts once proctoring WS enrolls
-        setTimeout(() => {
-          if (faceVerification.hasReference) faceVerification.startVerification();
-        }, 3000);
-      }
+      if (meta.session) connectProctoringWs(meta.session);
 
       setPhase("speaking");
       await playStreamingAudio(res);
@@ -606,7 +522,7 @@ export default function InterviewPage() {
       startListening();
     } catch (err) {
       setError(String(err));
-      setPhase("setup");
+      setPhase("idle");
     }
   };
 
@@ -738,67 +654,9 @@ export default function InterviewPage() {
 
           <button type="submit"
             className="w-full rounded border border-white py-2.5 text-sm font-medium text-white transition hover:bg-white hover:text-black">
-            Continue →
+            Start Interview →
           </button>
         </form>
-      </div>
-    );
-  }
-
-  // ── Setup: consent + reference photo ──────────────────────────────────────
-  if (phase === "setup") {
-    const hasVerification = consentAccepted && !!referencePhotoB64;
-    return (
-      <div className="mx-auto max-w-lg space-y-5 pt-8">
-        <div>
-          <h1 className="text-2xl font-bold">Identity Verification Setup</h1>
-          <p className="text-sm text-zinc-400 mt-1">
-            Optionally set up identity verification before starting.
-          </p>
-        </div>
-
-        {error && (
-          <div className="rounded border border-red-800 bg-red-900/30 px-4 py-2 text-sm text-red-300">{error}</div>
-        )}
-
-        {/* Live camera preview (camera already on) */}
-        <div className="rounded-lg border border-[var(--border)] overflow-hidden bg-black">
-          <video ref={videoRef} muted playsInline className="w-full" style={{ transform: "scaleX(-1)" }} />
-          {cameraError && <p className="px-3 py-2 text-xs text-zinc-500">{cameraError}</p>}
-        </div>
-
-        {/* Step 1: Consent */}
-        <ConsentNotice accepted={consentAccepted} onAccept={setConsentAccepted} />
-
-        {/* Step 2: Reference photo */}
-        <ReferencePhotoCapture
-          onReady={setReferencePhotoB64}
-          modelsLoading={faceVerification.modelsLoading}
-          modelsLoaded={faceVerification.modelsLoaded}
-          setReferenceFromFile={faceVerification.setReferenceFromFile}
-          setReferenceFromWebcam={faceVerification.setReferenceFromWebcam}
-          videoRef={videoRef}
-        />
-
-        <div className="flex gap-3">
-          <button type="button" onClick={() => { cleanupCamera(); setPhase("idle"); }}
-            className="flex-1 rounded border border-[var(--border)] py-2.5 text-sm text-zinc-400 hover:text-white transition">
-            ← Back
-          </button>
-          <button type="button" onClick={handleSetupComplete}
-            className="flex-1 rounded border border-white py-2.5 text-sm font-medium text-white transition hover:bg-white hover:text-black">
-            {hasVerification ? "Start Interview" : "Skip & Start →"}
-          </button>
-        </div>
-
-        {!hasVerification && (
-          <p className="text-center text-xs text-zinc-500">
-            Identity verification is optional — you can skip it and start immediately.
-          </p>
-        )}
-
-        {/* Hidden canvas used by ReferencePhotoCapture */}
-        <canvas ref={canvasRef} className="hidden" />
       </div>
     );
   }
@@ -891,28 +749,73 @@ export default function InterviewPage() {
           {cameraError && <p className="px-3 py-2 text-xs text-zinc-500">{cameraError}</p>}
         </div>
 
-        {/* Identity verification status */}
-        {faceVerification.isActive && (
-          <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-xs">
-            <div className="flex items-center gap-2 mb-1.5">
-              <div className={`h-2 w-2 rounded-full ${
-                faceVerification.consecutiveMismatches > 0 ? "bg-red-500" : "animate-pulse bg-green-400"}`} />
-              <span className="font-semibold text-zinc-300">ID Verification</span>
-            </div>
-            {faceVerification.lastScore !== null && (
-              <p className="text-zinc-500">
-                Match: <span className={`font-medium ${faceVerification.lastScore > 0.5 ? "text-green-400" : "text-red-400"}`}>
-                  {(faceVerification.lastScore * 100).toFixed(0)}%
+        {/* Sentiment / Tone */}
+        {sentimentHistory.length > 0 && (() => {
+          const latest = sentimentHistory[sentimentHistory.length - 1];
+          const emotionColor: Record<string, string> = {
+            confident:    "text-green-400",
+            enthusiastic: "text-blue-400",
+            neutral:      "text-zinc-400",
+            hesitant:     "text-amber-400",
+            nervous:      "text-orange-400",
+          };
+          const dotColor: Record<string, string> = {
+            confident:    "bg-green-400",
+            enthusiastic: "bg-blue-400",
+            neutral:      "bg-zinc-500",
+            hesitant:     "bg-amber-400",
+            nervous:      "bg-orange-400",
+          };
+          return (
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-xs">
+              <h3 className="mb-2 text-xs font-semibold text-zinc-300">Tone Analysis</h3>
+              {/* Current emotion */}
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-zinc-500">Current</span>
+                <span className={`font-semibold capitalize ${emotionColor[latest.emotion] ?? "text-zinc-400"}`}>
+                  {latest.emotion}
                 </span>
-              </p>
-            )}
-            {faceVerification.consecutiveMismatches > 0 && (
-              <p className="text-red-400 mt-1">
-                {faceVerification.consecutiveMismatches} consecutive mismatch{faceVerification.consecutiveMismatches > 1 ? "es" : ""}
-              </p>
-            )}
-          </div>
-        )}
+              </div>
+              {/* Mini trend (last 8 turns) */}
+              {sentimentHistory.length > 1 && (
+                <div className="flex items-center gap-1 mb-2">
+                  {sentimentHistory.slice(-8).map((s, i) => (
+                    <div
+                      key={i}
+                      title={s.emotion}
+                      className={`h-2 w-2 rounded-full ${dotColor[s.emotion] ?? "bg-zinc-500"}`}
+                    />
+                  ))}
+                </div>
+              )}
+              {/* Metrics */}
+              <dl className="space-y-1 text-[10px] text-zinc-500">
+                {latest.speaking_rate_wpm > 0 && (
+                  <div className="flex justify-between">
+                    <dt>Speaking rate</dt>
+                    <dd className="text-zinc-300">{latest.speaking_rate_wpm} wpm</dd>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <dt>Filler words</dt>
+                  <dd className={latest.filler_rate > 8 ? "text-amber-400" : "text-zinc-300"}>
+                    {latest.filler_rate.toFixed(1)}%
+                  </dd>
+                </div>
+                {latest.hedge_count > 0 && (
+                  <div className="flex justify-between">
+                    <dt>Hedging phrases</dt>
+                    <dd className="text-zinc-300">{latest.hedge_count}</dd>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <dt>Voice energy</dt>
+                  <dd className="text-zinc-300 capitalize">{latest.energy_level}</dd>
+                </div>
+              </dl>
+            </div>
+          );
+        })()}
 
         {/* Proctoring status */}
         <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 text-sm">
