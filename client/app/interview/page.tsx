@@ -296,6 +296,36 @@ export default function InterviewPage() {
     )
   }
 
+  // ── Render: Initial Setup Loading ──────────────────────────────────
+  if (phase === "processing" && transcript.length === 0) {
+    return (
+      <div className="min-h-screen bg-[#F7F5F3] flex items-center justify-center">
+        <div className="text-center space-y-6 px-4">
+          <div className="relative">
+            <div className="h-20 w-20 mx-auto">
+              <div className="absolute inset-0 rounded-full border-4 border-[#E5E3E0] animate-pulse" />
+              <div className="absolute inset-0 rounded-full border-4 border-[#37322F] border-t-transparent animate-spin" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-semibold text-[#37322F]">
+              {demoMode ? `Preparing ${demoPhase} demo...` : "Setting up your interview..."}
+            </h2>
+            <p className="text-sm text-[#6B6662]">
+              Initializing camera, microphone, and AI interviewer
+            </p>
+          </div>
+          {demoMode && (
+            <div className="inline-flex items-center gap-2 rounded-full bg-blue-100 px-4 py-2 text-sm font-medium text-blue-700">
+              <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+              Demo Mode
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // ── Render: Active Interview - Show summary if ended, otherwise show session view
   if (phase === "ended" && summary) {
     return (
