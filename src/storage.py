@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     target_company  TEXT NOT NULL,
     target_role     TEXT NOT NULL,
     clerk_user_id   TEXT,
+    user_profile_id UUID,
     started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ended_at        TIMESTAMPTZ,
     overall_score   REAL,
@@ -170,17 +171,50 @@ class BodhiStorage:
             except Exception:
                 pass
 
+            try:
+                cur.execute("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_profile_id UUID;")
+            except Exception:
+                pass
+
+            try:
+                cur.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_sessions_user_profile ON sessions(user_profile_id);"
+                )
+            except Exception:
+                pass
+
             # Execute the user_profiles table separately so any failure is visible.
             # (psycopg2 multi-statement execute only surfaces the last statement's error.)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS user_profiles (
                     user_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    clerk_user_id   TEXT,
                     resume_raw_text TEXT NOT NULL,
                     professional_summary JSONB NOT NULL,
                     created_at      TIMESTAMPTZ DEFAULT NOW(),
                     updated_at      TIMESTAMPTZ DEFAULT NOW()
                 )
             """)
+
+            try:
+                cur.execute("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS clerk_user_id TEXT;")
+            except Exception:
+                pass
+
+            cur.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_user_profiles_clerk_user_id "
+                "ON user_profiles(clerk_user_id) WHERE clerk_user_id IS NOT NULL;"
+            )
+
+            # Add FK for sessions.user_profile_id -> user_profiles.user_id
+            try:
+                cur.execute(
+                    "ALTER TABLE sessions "
+                    "ADD CONSTRAINT sessions_user_profile_id_fkey "
+                    "FOREIGN KEY (user_profile_id) REFERENCES user_profiles(user_id);"
+                )
+            except Exception:
+                pass
 
     def migrate_embedding_dimension(self) -> None:
         """One-time migration: drop and recreate company_documents for new vector(3072) dim.
@@ -215,13 +249,14 @@ class BodhiStorage:
         target_company: str,
         target_role: str,
         clerk_user_id: str | None = None,
+        user_profile_id: str | None = None,
     ) -> None:
         self._ensure_conn()
         with self.conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO sessions (id, candidate_name, target_company, target_role, clerk_user_id) "
-                "VALUES (%s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
-                (session_id, candidate_name, target_company, target_role, clerk_user_id),
+                "INSERT INTO sessions (id, candidate_name, target_company, target_role, clerk_user_id, user_profile_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING",
+                (session_id, candidate_name, target_company, target_role, clerk_user_id, user_profile_id),
             )
 
     def end_session(
@@ -568,16 +603,101 @@ class BodhiStorage:
 
     # ── User profiles (resume-based) ──────────────────────────────
 
-    def create_user_profile(self, resume_raw_text: str, professional_summary: dict) -> str:
+    def create_user_profile(
+        self,
+        resume_raw_text: str,
+        professional_summary: dict,
+        clerk_user_id: str | None = None,
+    ) -> str:
         """Store a parsed resume profile. Returns the generated user_id (UUID string)."""
         self._ensure_conn()
         with self.conn.cursor() as cur:
+            if clerk_user_id:
+                cur.execute(
+                    "SELECT user_id::text FROM user_profiles WHERE clerk_user_id = %s",
+                    (clerk_user_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    cur.execute(
+                        "UPDATE user_profiles SET resume_raw_text = %s, "
+                        "professional_summary = %s, updated_at = NOW() "
+                        "WHERE clerk_user_id = %s",
+                        (
+                            resume_raw_text,
+                            psycopg2.extras.Json(professional_summary),
+                            clerk_user_id,
+                        ),
+                    )
+                    return row[0]
+
+                cur.execute(
+                    "INSERT INTO user_profiles (clerk_user_id, resume_raw_text, professional_summary) "
+                    "VALUES (%s, %s, %s) RETURNING user_id::text",
+                    (
+                        clerk_user_id,
+                        resume_raw_text,
+                        psycopg2.extras.Json(professional_summary),
+                    ),
+                )
+            else:
+                cur.execute(
+                    "INSERT INTO user_profiles (resume_raw_text, professional_summary) "
+                    "VALUES (%s, %s) RETURNING user_id::text",
+                    (resume_raw_text, psycopg2.extras.Json(professional_summary)),
+                )
+            return cur.fetchone()[0]
+
+    def get_user_profile_id_by_clerk_user_id(self, clerk_user_id: str) -> str | None:
+        """Fetch a user_id by Clerk user_id. Returns None if not found."""
+        if not clerk_user_id:
+            return None
+        self._ensure_conn()
+        with self.conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO user_profiles (resume_raw_text, professional_summary) "
-                "VALUES (%s, %s) RETURNING user_id::text",
-                (resume_raw_text, psycopg2.extras.Json(professional_summary)),
+                "SELECT user_id::text FROM user_profiles WHERE clerk_user_id = %s",
+                (clerk_user_id,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+
+    def ensure_user_profile_for_clerk(self, clerk_user_id: str) -> str:
+        """Ensure a user_profile row exists for the Clerk user. Returns user_id."""
+        if not clerk_user_id:
+            raise ValueError("clerk_user_id is required")
+        self._ensure_conn()
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT user_id::text FROM user_profiles WHERE clerk_user_id = %s",
+                (clerk_user_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                return row[0]
+
+            cur.execute(
+                "INSERT INTO user_profiles (clerk_user_id, resume_raw_text, professional_summary) "
+                "VALUES (%s, %s, %s) RETURNING user_id::text",
+                (clerk_user_id, "", psycopg2.extras.Json({})),
             )
             return cur.fetchone()[0]
+
+    def get_user_profile_status_by_clerk_user_id(self, clerk_user_id: str) -> tuple[str, bool] | None:
+        """Return (user_id, has_resume) for the Clerk user, or None if missing."""
+        if not clerk_user_id:
+            return None
+        self._ensure_conn()
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT user_id::text, "
+                "(resume_raw_text <> '' AND professional_summary <> '{}'::jsonb) AS has_resume "
+                "FROM user_profiles WHERE clerk_user_id = %s",
+                (clerk_user_id,),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return row[0], bool(row[1])
 
     def get_user_profile(self, user_id: str) -> dict | None:
         """Fetch a stored user profile by UUID. Returns None if not found or invalid UUID."""
@@ -589,7 +709,7 @@ class BodhiStorage:
         self._ensure_conn()
         with self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT user_id::text, resume_raw_text, professional_summary, "
+                "SELECT user_id::text, clerk_user_id, resume_raw_text, professional_summary, "
                 "created_at, updated_at FROM user_profiles WHERE user_id = %s::uuid",
                 (user_id,),
             )

@@ -236,8 +236,12 @@ async def start_interview(
 ):
     session_id = uuid.uuid4().hex[:12]
 
+    resolved_user_profile_id = body.user_id
+    if not resolved_user_profile_id and storage:
+        resolved_user_profile_id = storage.get_user_profile_id_by_clerk_user_id(user_id)
+
     candidate_profile, jd_context, gap_map = _load_candidate_context(
-        body.mode, body.user_id, body.jd_text, storage, llm
+        body.mode, resolved_user_profile_id, body.jd_text, storage, llm
     )
     entity_context = _load_entity_context(body.company, body.role, cache, storage)
     suggested_topics = _load_suggested_topics(body.company, body.role, cache)
@@ -250,7 +254,12 @@ async def start_interview(
 
     try:
         storage.create_session(
-            session_id, body.candidate_name, body.company, body.role, clerk_user_id=user_id
+            session_id,
+            body.candidate_name,
+            body.company,
+            body.role,
+            clerk_user_id=user_id,
+            user_profile_id=resolved_user_profile_id,
         )
     except Exception:
         pass
@@ -759,11 +768,15 @@ async def start_interview_stream(
     loop = asyncio.get_event_loop()
     session_id = uuid.uuid4().hex[:12]
 
+    resolved_user_profile_id = body.user_id
+    if not resolved_user_profile_id and storage:
+        resolved_user_profile_id = storage.get_user_profile_id_by_clerk_user_id(user_id)
+
     _stream_log.info("[START-STREAM] Session %s: loading context...", session_id)
 
     # Run all blocking I/O in thread pool to avoid blocking event loop
     candidate_profile, jd_context, gap_map = await loop.run_in_executor(
-        None, lambda: _load_candidate_context(body.mode, body.user_id, body.jd_text, storage, llm)
+        None, lambda: _load_candidate_context(body.mode, resolved_user_profile_id, body.jd_text, storage, llm)
     )
     entity_context = await loop.run_in_executor(
         None, lambda: _load_entity_context(body.company, body.role, cache, storage)
@@ -783,7 +796,15 @@ async def start_interview_stream(
 
     try:
         await loop.run_in_executor(
-            None, lambda: storage.create_session(session_id, body.candidate_name, body.company, body.role, clerk_user_id=user_id)
+            None,
+            lambda: storage.create_session(
+                session_id,
+                body.candidate_name,
+                body.company,
+                body.role,
+                clerk_user_id=user_id,
+                user_profile_id=resolved_user_profile_id,
+            ),
         )
     except Exception:
         pass

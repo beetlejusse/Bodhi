@@ -1,9 +1,7 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-
-  // Attach Clerk session JWT for authenticated API calls
+async function getAuthHeaders(initHeaders?: HeadersInit): Promise<Headers> {
+  const headers = new Headers(initHeaders);
   if (typeof window !== "undefined") {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -15,6 +13,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       // Silently continue — anonymous request
     }
   }
+  return headers;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  authToken?: string
+): Promise<T> {
+  const headers = authToken
+    ? new Headers({ ...init?.headers, Authorization: `Bearer ${authToken}` })
+    : await getAuthHeaders(init?.headers);
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
@@ -24,6 +33,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as unknown as T;
   return res.json();
 }
+
+// ── Users ───────────────────────────────────────────────
+
+export interface UserSyncResponse {
+  user_id: string;
+  clerk_user_id: string;
+}
+
+export interface UserStatusResponse {
+  user_id: string;
+  clerk_user_id: string;
+  has_resume: boolean;
+}
+
+export const upsertCurrentUser = (authToken?: string) =>
+  request<UserSyncResponse>(
+    "/api/users/me",
+    {
+      method: "POST",
+    },
+    authToken
+  );
+
+export const getCurrentUserStatus = (authToken?: string) =>
+  request<UserStatusResponse>("/api/users/me/status", undefined, authToken);
 
 // ── Roles ────────────────────────────────────────────────
 
@@ -181,13 +215,17 @@ export interface ResumeUploadResponse {
   profile: CandidateProfile;
 }
 
-export const uploadResume = (file: File) => {
+export const uploadResume = (file: File, authToken?: string) => {
   const form = new FormData();
   form.append("file", file);
-  return request<ResumeUploadResponse>("/api/resumes/upload", {
-    method: "POST",
-    body: form,
-  });
+  return request<ResumeUploadResponse>(
+    "/api/resumes/upload",
+    {
+      method: "POST",
+      body: form,
+    },
+    authToken
+  );
 };
 
 export const getResumeProfile = (userId: string) =>
@@ -259,31 +297,6 @@ export const endInterview = (sessionId: string) =>
 
 // ── Streaming endpoints ─────────────────────────────────────────
 
-/** Sentiment analysis result returned with each audio turn. */
-export interface SentimentData {
-  // Rule-based (always present)
-  emotion: string;
-  filler_rate: number;
-  speaking_rate_wpm: number;
-  energy_level: "low" | "medium" | "high";
-  hedge_count: number;
-  score: number;
-  // HuggingFace distilroberta (present when models are loaded)
-  hf_emotion?: string;        // joy | fear | anger | sadness | disgust | surprise | neutral
-  hf_confidence?: number;     // 0–1
-  sentiment?: "positive" | "neutral" | "negative";
-  pitch_variance?: number;
-  confidence_score?: number;  // 0–100
-  flags?: string[];           // nervous | rushed | hesitant | distressed | confident
-  // MediaPipe posture (present when webcam frame was sent)
-  posture?: string;           // upright | slouching | leaning_away | looking_away | face_not_visible
-  head_tilt_angle?: number;
-  gaze_direction?: string;    // center | left | right | up | down
-  spine_score?: number;       // 0–100
-  face_visible?: boolean;
-  posture_flags?: string[];
-}
-
 /** Parsed metadata from streaming response headers. */
 export interface StreamMeta {
   session?: string;
@@ -291,7 +304,6 @@ export interface StreamMeta {
   transcript?: string;
   phase?: string;
   shouldEnd?: boolean;
-  sentiment?: SentimentData;
 }
 
 /** Extract X-Bodhi-* headers from a streaming response, URL-decoding values. */
@@ -300,18 +312,12 @@ export function parseStreamHeaders(res: Response): StreamMeta {
     const v = res.headers.get(`X-Bodhi-${key}`);
     return v ? decodeURIComponent(v) : undefined;
   };
-  const sentimentRaw = d("Sentiment");
-  let sentiment: SentimentData | undefined;
-  if (sentimentRaw) {
-    try { sentiment = JSON.parse(sentimentRaw) as SentimentData; } catch {}
-  }
   return {
     session: d("Session"),
     text: d("Text"),
     transcript: d("Transcript"),
     phase: d("Phase"),
     shouldEnd: d("End") === "true",
-    sentiment,
   };
 }
 
@@ -324,14 +330,7 @@ export const startInterviewStream = async (data: {
   user_id?: string;
   jd_text?: string;
 }) => {
-  const headers = new Headers({ "Content-Type": "application/json" });
-  if (typeof window !== "undefined") {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const token = await (window as any).Clerk?.session?.getToken();
-      if (token) headers.set("Authorization", `Bearer ${token}`);
-    } catch {}
-  }
+  const headers = await getAuthHeaders({ "Content-Type": "application/json" });
   return fetch(`${BASE}/api/interviews/start-stream`, {
     method: "POST",
     headers,
@@ -340,36 +339,28 @@ export const startInterviewStream = async (data: {
 };
 
 /** Send text message and receive streaming audio response. */
-export const sendMessageStream = (sessionId: string, text: string) =>
-  fetch(`${BASE}/api/interviews/${sessionId}/message-stream`, {
+export const sendMessageStream = async (sessionId: string, text: string) => {
+  const headers = await getAuthHeaders({ "Content-Type": "application/json" });
+  return fetch(`${BASE}/api/interviews/${sessionId}/message-stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ text }),
   });
+};
 
-/** Send audio blob (+ optional webcam frame) and receive streaming audio response. */
+/** Send audio blob and receive streaming audio response. */
 export const sendAudioStream = async (
   sessionId: string,
   blob: Blob,
-  filename = "audio.webm",
-  frameBlob?: Blob,
+  filename = "audio.webm"
 ) => {
   const form = new FormData();
   form.append("file", blob, filename);
-  if (frameBlob) form.append("image_file", frameBlob, "frame.jpg");
-
-  const headers = new Headers();
-  if (typeof window !== "undefined") {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const token = await (window as any).Clerk?.session?.getToken();
-      if (token) headers.set("Authorization", `Bearer ${token}`);
-    } catch {}
-  }
-
+  const headers = await getAuthHeaders();
   return fetch(`${BASE}/api/interviews/${sessionId}/audio-stream`, {
     method: "POST",
     headers,
     body: form,
   });
 };
+
