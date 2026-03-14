@@ -1,9 +1,7 @@
 const BASE = process.env.NEXT_PUBLIC_API_URL ?? "";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers);
-
-  // Attach Clerk session JWT for authenticated API calls
+async function getAuthHeaders(initHeaders?: HeadersInit): Promise<Headers> {
+  const headers = new Headers(initHeaders);
   if (typeof window !== "undefined") {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -15,6 +13,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       // Silently continue — anonymous request
     }
   }
+  return headers;
+}
+
+async function request<T>(
+  path: string,
+  init?: RequestInit,
+  authToken?: string
+): Promise<T> {
+  const headers = authToken
+    ? new Headers({ ...init?.headers, Authorization: `Bearer ${authToken}` })
+    : await getAuthHeaders(init?.headers);
 
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
@@ -24,6 +33,31 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (res.status === 204) return undefined as unknown as T;
   return res.json();
 }
+
+// ── Users ───────────────────────────────────────────────
+
+export interface UserSyncResponse {
+  user_id: string;
+  clerk_user_id: string;
+}
+
+export interface UserStatusResponse {
+  user_id: string;
+  clerk_user_id: string;
+  has_resume: boolean;
+}
+
+export const upsertCurrentUser = (authToken?: string) =>
+  request<UserSyncResponse>(
+    "/api/users/me",
+    {
+      method: "POST",
+    },
+    authToken
+  );
+
+export const getCurrentUserStatus = (authToken?: string) =>
+  request<UserStatusResponse>("/api/users/me/status", undefined, authToken);
 
 // ── Roles ────────────────────────────────────────────────
 
@@ -181,13 +215,17 @@ export interface ResumeUploadResponse {
   profile: CandidateProfile;
 }
 
-export const uploadResume = (file: File) => {
+export const uploadResume = (file: File, authToken?: string) => {
   const form = new FormData();
   form.append("file", file);
-  return request<ResumeUploadResponse>("/api/resumes/upload", {
-    method: "POST",
-    body: form,
-  });
+  return request<ResumeUploadResponse>(
+    "/api/resumes/upload",
+    {
+      method: "POST",
+      body: form,
+    },
+    authToken
+  );
 };
 
 export const getResumeProfile = (userId: string) =>
@@ -284,38 +322,45 @@ export function parseStreamHeaders(res: Response): StreamMeta {
 }
 
 /** Start interview, returning a raw streaming Response (audio/mpeg). */
-export const startInterviewStream = (data: {
+export const startInterviewStream = async (data: {
   candidate_name?: string;
   company?: string;
   role?: string;
   mode?: "standard" | "option_a" | "option_b";
   user_id?: string;
   jd_text?: string;
-}) =>
-  fetch(`${BASE}/api/interviews/start-stream`, {
+}) => {
+  const headers = await getAuthHeaders({ "Content-Type": "application/json" });
+  return fetch(`${BASE}/api/interviews/start-stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(data),
   });
+};
 
 /** Send text message and receive streaming audio response. */
-export const sendMessageStream = (sessionId: string, text: string) =>
-  fetch(`${BASE}/api/interviews/${sessionId}/message-stream`, {
+export const sendMessageStream = async (sessionId: string, text: string) => {
+  const headers = await getAuthHeaders({ "Content-Type": "application/json" });
+  return fetch(`${BASE}/api/interviews/${sessionId}/message-stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify({ text }),
   });
+};
 
 /** Send audio blob and receive streaming audio response. */
-export const sendAudioStream = (
+export const sendAudioStream = async (
   sessionId: string,
   blob: Blob,
   filename = "audio.webm"
 ) => {
   const form = new FormData();
   form.append("file", blob, filename);
+  const headers = await getAuthHeaders();
   return fetch(`${BASE}/api/interviews/${sessionId}/audio-stream`, {
     method: "POST",
+    headers,
     body: form,
   });
 };
+
