@@ -259,6 +259,31 @@ export const endInterview = (sessionId: string) =>
 
 // ── Streaming endpoints ─────────────────────────────────────────
 
+/** Sentiment analysis result returned with each audio turn. */
+export interface SentimentData {
+  // Rule-based (always present)
+  emotion: string;
+  filler_rate: number;
+  speaking_rate_wpm: number;
+  energy_level: "low" | "medium" | "high";
+  hedge_count: number;
+  score: number;
+  // HuggingFace distilroberta (present when models are loaded)
+  hf_emotion?: string;        // joy | fear | anger | sadness | disgust | surprise | neutral
+  hf_confidence?: number;     // 0–1
+  sentiment?: "positive" | "neutral" | "negative";
+  pitch_variance?: number;
+  confidence_score?: number;  // 0–100
+  flags?: string[];           // nervous | rushed | hesitant | distressed | confident
+  // MediaPipe posture (present when webcam frame was sent)
+  posture?: string;           // upright | slouching | leaning_away | looking_away | face_not_visible
+  head_tilt_angle?: number;
+  gaze_direction?: string;    // center | left | right | up | down
+  spine_score?: number;       // 0–100
+  face_visible?: boolean;
+  posture_flags?: string[];
+}
+
 /** Parsed metadata from streaming response headers. */
 export interface StreamMeta {
   session?: string;
@@ -266,6 +291,7 @@ export interface StreamMeta {
   transcript?: string;
   phase?: string;
   shouldEnd?: boolean;
+  sentiment?: SentimentData;
 }
 
 /** Extract X-Bodhi-* headers from a streaming response, URL-decoding values. */
@@ -274,29 +300,44 @@ export function parseStreamHeaders(res: Response): StreamMeta {
     const v = res.headers.get(`X-Bodhi-${key}`);
     return v ? decodeURIComponent(v) : undefined;
   };
+  const sentimentRaw = d("Sentiment");
+  let sentiment: SentimentData | undefined;
+  if (sentimentRaw) {
+    try { sentiment = JSON.parse(sentimentRaw) as SentimentData; } catch {}
+  }
   return {
     session: d("Session"),
     text: d("Text"),
     transcript: d("Transcript"),
     phase: d("Phase"),
     shouldEnd: d("End") === "true",
+    sentiment,
   };
 }
 
 /** Start interview, returning a raw streaming Response (audio/mpeg). */
-export const startInterviewStream = (data: {
+export const startInterviewStream = async (data: {
   candidate_name?: string;
   company?: string;
   role?: string;
   mode?: "standard" | "option_a" | "option_b";
   user_id?: string;
   jd_text?: string;
-}) =>
-  fetch(`${BASE}/api/interviews/start-stream`, {
+}) => {
+  const headers = new Headers({ "Content-Type": "application/json" });
+  if (typeof window !== "undefined") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const token = await (window as any).Clerk?.session?.getToken();
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+    } catch {}
+  }
+  return fetch(`${BASE}/api/interviews/start-stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(data),
   });
+};
 
 /** Send text message and receive streaming audio response. */
 export const sendMessageStream = (sessionId: string, text: string) =>
@@ -306,16 +347,29 @@ export const sendMessageStream = (sessionId: string, text: string) =>
     body: JSON.stringify({ text }),
   });
 
-/** Send audio blob and receive streaming audio response. */
-export const sendAudioStream = (
+/** Send audio blob (+ optional webcam frame) and receive streaming audio response. */
+export const sendAudioStream = async (
   sessionId: string,
   blob: Blob,
-  filename = "audio.webm"
+  filename = "audio.webm",
+  frameBlob?: Blob,
 ) => {
   const form = new FormData();
   form.append("file", blob, filename);
+  if (frameBlob) form.append("image_file", frameBlob, "frame.jpg");
+
+  const headers = new Headers();
+  if (typeof window !== "undefined") {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const token = await (window as any).Clerk?.session?.getToken();
+      if (token) headers.set("Authorization", `Bearer ${token}`);
+    } catch {}
+  }
+
   return fetch(`${BASE}/api/interviews/${sessionId}/audio-stream`, {
     method: "POST",
+    headers,
     body: form,
   });
 };
