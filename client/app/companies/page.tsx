@@ -9,7 +9,8 @@ import { EmptyState } from "@/components/ui/empty-state"
 import { FormCard } from "@/components/ui/form-card"
 import { FormInput } from "@/components/ui/form-input"
 import { PrimaryButton } from "@/components/ui/primary-button"
-import { CompanyBentoGrid } from "@/components/companies/CompanyBentoGrid"
+import { CompanyCarousel } from "@/components/companies/CompanyCarousel"
+import { CompanyDetail } from "@/components/companies/CompanyDetail"
 import {
   type CompanyProfile,
   listCompanies,
@@ -22,6 +23,7 @@ export default function CompaniesPage() {
   const [loading, setLoading] = useState(true)
   const [msg, setMsg] = useState("")
   const [msgType, setMsgType] = useState<"success" | "error">("success")
+  const [selectedCompany, setSelectedCompany] = useState<CompanyProfile | null>(null)
 
   const [form, setForm] = useState({
     company_name: "",
@@ -68,11 +70,26 @@ export default function CompaniesPage() {
   const handleDelete = async (company: CompanyProfile) => {
     try {
       await deleteCompany(company.company_name, company.role)
+      if (
+        selectedCompany &&
+        selectedCompany.company_name === company.company_name &&
+        selectedCompany.role === company.role
+      ) {
+        setSelectedCompany(null)
+      }
       load()
     } catch (err) {
       setMsg(String(err))
       setMsgType("error")
     }
+  }
+
+  const handleSelectCompany = (company: CompanyProfile) => {
+    setSelectedCompany(company)
+  }
+
+  const handleCloseDetail = () => {
+    setSelectedCompany(null)
   }
 
   return (
@@ -94,7 +111,29 @@ export default function CompaniesPage() {
             ) : companies.length === 0 ? (
               <EmptyState message="No company profiles yet. Add one above to get started." />
             ) : (
-              <CompanyBentoGrid companies={companies} onDelete={handleDelete} />
+              <>
+                {/* Auto-scrolling Carousel */}
+                <CompanyCarousel
+                  companies={companies}
+                  selectedCompany={selectedCompany}
+                  onSelect={handleSelectCompany}
+                  onDelete={handleDelete}
+                />
+
+                {/* Detail View - appears below carousel when company is selected */}
+                {selectedCompany && (
+                  <CompanyDetail
+                    company={selectedCompany}
+                    index={companies.findIndex(
+                      (c) =>
+                        c.company_name === selectedCompany.company_name &&
+                        c.role === selectedCompany.role
+                    )}
+                    onDelete={handleDelete}
+                    onClose={handleCloseDetail}
+                  />
+                )}
+              </>
             )}
           </section>
 

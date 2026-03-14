@@ -11,9 +11,10 @@ interface Turn {
 interface TranscriptViewProps {
   transcript: Turn[]
   isProcessing?: boolean
+  interviewerPersona?: "bodhi" | "riya"
 }
 
-export function TranscriptView({ transcript, isProcessing }: TranscriptViewProps) {
+export function TranscriptView({ transcript, isProcessing, interviewerPersona = "bodhi" }: TranscriptViewProps) {
   const endRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -50,11 +51,11 @@ export function TranscriptView({ transcript, isProcessing }: TranscriptViewProps
           <div
             className={`mt-0.5 h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold shadow-sm ${
               turn.speaker === "bodhi"
-                ? "bg-[#37322F] text-white"
+                ? interviewerPersona === "bodhi" ? "bg-[#37322F] text-white" : "bg-[#5D5754] text-white"
                 : "bg-[rgba(55,50,47,0.08)] text-[#37322F]"
             }`}
           >
-            {turn.speaker === "bodhi" ? "B" : "Y"}
+            {turn.speaker === "bodhi" ? (interviewerPersona === "riya" ? "R" : "B") : "Y"}
           </div>
           <div className={`flex-1 ${turn.speaker === "user" ? "text-right" : ""}`}>
             {turn.phase && (
@@ -77,8 +78,10 @@ export function TranscriptView({ transcript, isProcessing }: TranscriptViewProps
 
       {isProcessing && (
         <div className="flex gap-3 animate-fade-in-up">
-          <div className="mt-0.5 h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold bg-[#37322F] text-white shadow-sm">
-            B
+          <div className={`mt-0.5 h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold shadow-sm ${
+            interviewerPersona === "bodhi" ? "bg-[#37322F] text-white" : "bg-[#5D5754] text-white"
+          }`}>
+            {interviewerPersona === "riya" ? "R" : "B"}
           </div>
           <div className="flex-1">
             <div className="inline-block rounded-2xl bg-[rgba(55,50,47,0.04)] px-4 py-2.5">

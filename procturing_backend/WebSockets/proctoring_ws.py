@@ -8,7 +8,6 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 
 from ..services.proctoring.orchestrator import ProctoringOrchestrator
-from ..services.proctoring.identity_detection import IdentityVerifier
 from ..services.models.violation import ViolationEvent
 from ..config import settings
 
@@ -42,13 +41,11 @@ active_sessions: Dict[str, ProctoringOrchestrator] = {}
 
 # ── Message types (contract between frontend and backend) ─────────────────────
 # Frontend → Backend:
-#   { "type": "enroll",       "session_id": "...", "candidate_id": "...", "image": "base64..." }
 #   { "type": "frame",        "frame_id": "...",   "frame": "base64..." }
 #   { "type": "client_violation", "violation_type": "tab_switch" | "fullscreen_exit" | ... }
 #   { "type": "end_session" }
 #
 # Backend → Frontend:
-#   { "type": "enrolled",     "success": true/false, "message": "..." }
 #   { "type": "frame_result", "frame_id": "...", "has_violations": bool, "violations": [...], ... }
 #   { "type": "session_flagged", "summary": {...} }
 #   { "type": "session_summary", "summary": {...} }
@@ -66,11 +63,21 @@ async def proctoring_websocket(websocket: WebSocket, session_id: str):
     One WebSocket connection per active assessment session.
     The frontend connects here as soon as the session starts,
     sends frames every 2-3 seconds, and listens for violation events.
+    No enrollment step required — identity comparison is disabled.
     """
     await websocket.accept()
     logger.info(f"WebSocket connected | session={session_id}")
 
-    orchestrator: ProctoringOrchestrator = None
+    # Create orchestrator immediately on connection
+    app_state = websocket.app.state
+    orchestrator = ProctoringOrchestrator(
+        session_id=session_id,
+        candidate_id="default",  # No identity verification, so using default
+        face_detector=app_state.face_detector,
+        gaze_analyzer=app_state.gaze_analyzer,
+        object_detector=app_state.object_detector,
+    )
+    active_sessions[session_id] = orchestrator
 
     try:
         while True:
@@ -91,31 +98,19 @@ async def proctoring_websocket(websocket: WebSocket, session_id: str):
 
             # ── Route message type ────────────────────────────
 
-            # 1. Enroll reference image
-            if msg_type == "enroll":
-                orchestrator = await _handle_enroll(
-                    websocket, message, session_id
-                )
-
-            # 2. Analyze a frame
-            elif msg_type == "frame":
-                if orchestrator is None:
-                    await _send_error(websocket, "Session not enrolled. Send 'enroll' message first.")
-                    continue
+            # 1. Analyze a frame
+            if msg_type == "frame":
                 await _handle_frame(websocket, message, orchestrator)
 
-            # 3. Client-side violation (tab switch, fullscreen exit, etc.)
+            # 2. Client-side violation (tab switch, fullscreen exit, etc.)
             elif msg_type == "client_violation":
-                if orchestrator is None:
-                    await _send_error(websocket, "Session not enrolled.")
-                    continue
                 await _handle_client_violation(websocket, message, orchestrator)
 
-            # 4. Ping / keepalive
+            # 3. Ping / keepalive
             elif msg_type == "ping":
                 await websocket.send_text(_dumps({"type": "pong"}))
 
-            # 5. End session
+            # 4. End session
             elif msg_type == "end_session":
                 await _handle_end_session(websocket, orchestrator, session_id)
                 break
@@ -142,68 +137,6 @@ async def proctoring_websocket(websocket: WebSocket, session_id: str):
 
 
 # ── Message handlers ──────────────────────────────────────────────────────────
-
-async def _handle_enroll(
-    websocket: WebSocket,
-    message: dict,
-    session_id: str,
-) -> ProctoringOrchestrator:
-    """
-    Handle the enroll message.
-    Creates the orchestrator for this session and enrolls the reference image.
-    """
-    candidate_id = message.get("candidate_id")
-    reference_image_b64 = message.get("image")
-
-    if not candidate_id or not reference_image_b64:
-        await _send_error(websocket, "Enroll message requires 'candidate_id' and 'image'.")
-        return None
-
-    try:
-        # Decode the reference image
-        reference_image = IdentityVerifier.decode_base64_image(reference_image_b64)
-
-        # Access shared CV models via websocket.app.state
-        app_state = websocket.app.state
-
-        # Create orchestrator for this session, injecting the shared CV models
-        orchestrator = ProctoringOrchestrator(
-            session_id=session_id,
-            candidate_id=candidate_id,
-            face_detector=app_state.face_detector,
-            gaze_analyzer=app_state.gaze_analyzer,
-            object_detector=app_state.object_detector,
-            identity_verifier=app_state.identity_verifier,
-        )
-
-        # Enroll the reference image
-        # Run in thread pool since DeepFace is CPU-bound / blocking
-        success = await asyncio.get_running_loop().run_in_executor(
-            None, orchestrator.enroll_reference, reference_image
-        )
-
-        if success:
-            active_sessions[session_id] = orchestrator
-            await websocket.send_text(_dumps({
-                "type": "enrolled",
-                "success": True,
-                "message": "Reference image enrolled successfully. Session is ready.",
-            }))
-            logger.info(f"Session enrolled | session={session_id} | candidate={candidate_id}")
-            return orchestrator
-        else:
-            await websocket.send_text(_dumps({
-                "type": "enrolled",
-                "success": False,
-                "message": "No face detected in reference image. Please upload a clearer photo.",
-            }))
-            return None
-
-    except Exception as e:
-        logger.error(f"Enroll error | session={session_id} | {e}")
-        await _send_error(websocket, f"Enrollment failed: {str(e)}")
-        return None
-
 
 async def _handle_frame(
     websocket: WebSocket,

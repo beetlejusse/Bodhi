@@ -42,6 +42,7 @@ class InterviewState(TypedDict, total=False):
     entity_context: str           # company info loaded from Redis/Neon at session start
     suggested_topics: str         # soft guidance from uploaded documents (cached in Redis)
     should_end: bool
+    interviewer_persona: str      # "bodhi" (male, default) | "riya" (female)
 
     # ── Pre-generated curriculum queue ────────────────────────────
     queued_questions: dict        # {"technical": ["Q1", "Q2"], "dsa": ["Q1", "Q2"]}

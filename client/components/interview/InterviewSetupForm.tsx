@@ -17,6 +17,7 @@ export interface InterviewFormData {
   mode: "standard" | "option_a" | "option_b"
   user_id: string
   jd_text: string
+  interviewer_persona: "bodhi" | "riya"
 }
 
 export function InterviewSetupForm({ onSubmit, loading }: InterviewSetupFormProps) {
@@ -31,6 +32,7 @@ export function InterviewSetupForm({ onSubmit, loading }: InterviewSetupFormProp
     mode: "standard",
     user_id: "",
     jd_text: "",
+    interviewer_persona: "bodhi",
   })
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -185,7 +187,7 @@ export function InterviewSetupForm({ onSubmit, loading }: InterviewSetupFormProp
       )}
 
       {form.mode === "option_b" && (
-        <div>
+        <div className="animate-fade-in-up">
           <label className="block text-xs font-semibold text-[rgba(55,50,47,0.6)] mb-2 uppercase tracking-wider">
             Job Description *
           </label>
@@ -198,6 +200,53 @@ export function InterviewSetupForm({ onSubmit, loading }: InterviewSetupFormProp
           />
         </div>
       )}
+
+      <div>
+        <label className="block text-xs font-semibold text-[rgba(55,50,47,0.6)] mb-3 uppercase tracking-wider">
+          Choose Interviewer
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setForm({ ...form, interviewer_persona: "bodhi" })}
+            className={`flex flex-col items-center p-4 rounded-xl border transition-all ${
+              form.interviewer_persona === "bodhi"
+                ? "bg-[#37322F] border-[#37322F] text-white"
+                : "bg-[#F7F5F3] border-[rgba(55,50,47,0.15)] text-[#37322F] hover:border-[#37322F]"
+            }`}
+          >
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+              form.interviewer_persona === "bodhi" ? "bg-[rgba(255,255,255,0.2)]" : "bg-[rgba(55,50,47,0.1)]"
+            }`}>
+              <span className="text-xl">🧔</span>
+            </div>
+            <span className="text-sm font-bold">Bodhi</span>
+            <span className={`text-[10px] mt-0.5 ${
+              form.interviewer_persona === "bodhi" ? "text-[rgba(255,255,255,0.7)]" : "text-[rgba(55,50,47,0.5)]"
+            }`}>Tough but Fair</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setForm({ ...form, interviewer_persona: "riya" })}
+            className={`flex flex-col items-center p-4 rounded-xl border transition-all ${
+              form.interviewer_persona === "riya"
+                ? "bg-[#37322F] border-[#37322F] text-white"
+                : "bg-[#F7F5F3] border-[rgba(55,50,47,0.15)] text-[#37322F] hover:border-[#37322F]"
+            }`}
+          >
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center mb-2 ${
+              form.interviewer_persona === "riya" ? "bg-[rgba(255,255,255,0.2)]" : "bg-[rgba(55,50,47,0.1)]"
+            }`}>
+              <span className="text-xl">👩‍💼</span>
+            </div>
+            <span className="text-sm font-bold">Riya</span>
+            <span className={`text-[10px] mt-0.5 ${
+              form.interviewer_persona === "riya" ? "text-[rgba(255,255,255,0.7)]" : "text-[rgba(55,50,47,0.5)]"
+            }`}>Supportive</span>
+          </button>
+        </div>
+      </div>
 
       <PrimaryButton type="submit" fullWidth loading={loading}>
         Continue →

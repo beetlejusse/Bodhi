@@ -5,7 +5,6 @@ from loguru import logger
 import uvicorn
 from .config import settings
 from .WebSockets.proctoring_ws import proctoring_router
-from .router.enrollment import enrollment_router
 
 
 @asynccontextmanager
@@ -14,12 +13,10 @@ async def lifespan(app: FastAPI):
 
     logger.info("pre-loading the cv models")
     from .services.proctoring.face_detection import FaceDetector
-    from .services.proctoring.identity_detection import IdentityVerifier
     from .services.proctoring.gaze_analysis import GazeAnalyzer
     from .services.proctoring.object_detection import ObjectDetector
 
     app.state.face_detector=FaceDetector()
-    app.state.identity_verifier=IdentityVerifier()
     app.state.gaze_analyzer=GazeAnalyzer()
     app.state.object_detector=ObjectDetector()
     logger.info("models ready and loaded to be used!!")
@@ -47,7 +44,6 @@ app.add_middleware(
 
 #ROUTERS
 app.include_router(proctoring_router)
-app.include_router(enrollment_router)
 
 
 #HEALTH CHECKUP
@@ -57,7 +53,6 @@ async def health_check():
         "status": "ok",
         "models_loaded": {
             "face_detector": hasattr(app.state, "face_detector"),
-            "identity_verifier": hasattr(app.state, "identity_verifier"),
             "gaze_analyzer": hasattr(app.state, "gaze_analyzer"),
             "object_detector": hasattr(app.state, "object_detector"),
         },

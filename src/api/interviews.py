@@ -277,6 +277,7 @@ async def start_interview(
         "entity_context": entity_context,
         "suggested_topics": suggested_topics,
         "should_end": False,
+        "interviewer_persona": body.interviewer_persona,
         "queued_questions": curriculum,
         "target_question": "",  # intro is ad-hoc, no target question
         "interview_mode": body.mode,
@@ -629,14 +630,14 @@ from src.services.sentiment import analyze_tone as _analyze_tone
 _stream_log = logging.getLogger("bodhi.api.stream")
 
 
-async def _tts_stream_generator(text: str, sarvam_key: str):
+async def _tts_stream_generator(text: str, sarvam_key: str, speaker: str = "shubh"):
     """Yield MP3 audio chunks from TTS streaming (legacy full-text mode)."""
     _stream_log.info("Starting TTS stream for %d chars of text", len(text))
     from src.services.tts import text_to_speech_stream
     chunk_count = 0
     try:
         async for chunk in text_to_speech_stream(
-            text, api_key=sarvam_key, target_language_code="hi-IN", speaker="shubh",
+            text, api_key=sarvam_key, target_language_code="hi-IN", speaker=speaker,
         ):
             chunk_count += 1
             _stream_log.debug("Yielding chunk #%d (%d bytes)", chunk_count, len(chunk))
@@ -676,7 +677,7 @@ async def _sentence_accumulator(token_aiter):
         yield buf
 
 
-async def _llm_tts_pipeline(graph, graph_config, user_input, sarvam_key: str):
+async def _llm_tts_pipeline(graph, graph_config, user_input, sarvam_key: str, speaker: str = "shubh"):
     """Pipeline: LLM tokens → sentence accumulator → TTS audio chunks.
 
     Uses graph.astream_events() to get individual LLM tokens, accumulates
@@ -739,7 +740,7 @@ async def _llm_tts_pipeline(graph, graph_config, user_input, sarvam_key: str):
             sentence_stream,
             api_key=sarvam_key,
             target_language_code="hi-IN",
-            speaker="shubh",
+            speaker=speaker,
         ):
             chunk_count += 1
             yield audio_chunk, None
@@ -762,10 +763,10 @@ async def _llm_tts_pipeline(graph, graph_config, user_input, sarvam_key: str):
     yield None, {"reply_text": reply_text, "phase": phase, "should_end": should_end}
 
 
-async def _pipeline_audio_generator(graph, graph_config, user_input, sarvam_key, result_holder: dict):
+async def _pipeline_audio_generator(graph, graph_config, user_input, sarvam_key, result_holder: dict, speaker: str = "shubh"):
     """Async generator that yields only audio bytes from the pipeline.
     Stores the final metadata in result_holder for the caller to inspect."""
-    async for audio_chunk, meta in _llm_tts_pipeline(graph, graph_config, user_input, sarvam_key):
+    async for audio_chunk, meta in _llm_tts_pipeline(graph, graph_config, user_input, sarvam_key, speaker=speaker):
         if audio_chunk is not None:
             yield audio_chunk
         elif meta is not None:
@@ -848,6 +849,7 @@ async def start_interview_stream(
         "target_role": body.role,
         "current_phase": "intro",
         "difficulty_level": 3,
+        "interviewer_persona": body.interviewer_persona,
         "phase_scores": {},
         "entity_context": entity_context,
         "suggested_topics": suggested_topics,
@@ -885,8 +887,9 @@ async def start_interview_stream(
         Curriculum=curriculum_json,
     )
 
+    speaker = "shreya" if body.interviewer_persona == "riya" else "shubh"
     return StreamingResponse(
-        _tts_stream_generator(greeting, sarvam_key),
+        _tts_stream_generator(greeting, sarvam_key, speaker=speaker),
         media_type="audio/mpeg",
         headers=headers,
     )
@@ -917,10 +920,12 @@ async def send_message_stream(
         raise HTTPException(500, "SARVAM_API_KEY not configured")
 
     result_holder: dict = {}
+    persona = state.values.get("interviewer_persona", "bodhi")
+    speaker = "shreya" if persona == "riya" else "shubh"
 
     async def _gen():
         async for chunk in _pipeline_audio_generator(
-            graph, graph_config, body.text, sarvam_key, result_holder
+            graph, graph_config, body.text, sarvam_key, result_holder, speaker=speaker
         ):
             yield chunk
         # Post-stream: cache update
@@ -1112,10 +1117,12 @@ async def send_audio_stream(
         _flush_session_async(session_id, result, graph_config)
 
     # ── Stream TTS for the reply ──────────────────────────────────────────────
+    persona = state.values.get("interviewer_persona", "bodhi")
+    speaker = "shreya" if persona == "riya" else "shubh"
 
     async def _gen():
         if reply_text:
-            async for chunk in _tts_stream_generator(reply_text, sarvam_key):
+            async for chunk in _tts_stream_generator(reply_text, sarvam_key, speaker=speaker):
                 yield chunk
 
     headers = _stream_headers(
