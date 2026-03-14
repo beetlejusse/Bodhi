@@ -68,36 +68,26 @@ export function useProctoring(
       proctoringWsRef.current = ws
 
       ws.onopen = () => {
-        ws.send(
-          JSON.stringify({
-            type: "enroll",
-            candidate_id: sessionId,
-            image: referenceImageB64,
-          })
-        )
+        setProctoringActive(true)
+        frameIntervalRef.current = setInterval(() => {
+          if (proctoringWsRef.current?.readyState !== WebSocket.OPEN) return
+          const frame = captureFrame()
+          if (!frame) return
+          frameCounterRef.current += 1
+          proctoringWsRef.current.send(
+            JSON.stringify({
+              type: "frame",
+              frame_id: `frame-${frameCounterRef.current}`,
+              frame,
+            })
+          )
+        }, FRAME_INTERVAL_MS)
       }
 
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data)
-          if (msg.type === "enrolled") {
-            if (msg.success) {
-              setProctoringActive(true)
-              frameIntervalRef.current = setInterval(() => {
-                if (proctoringWsRef.current?.readyState !== WebSocket.OPEN) return
-                const frame = captureFrame()
-                if (!frame) return
-                frameCounterRef.current += 1
-                proctoringWsRef.current.send(
-                  JSON.stringify({
-                    type: "frame",
-                    frame_id: `frame-${frameCounterRef.current}`,
-                    frame,
-                  })
-                )
-              }, FRAME_INTERVAL_MS)
-            }
-          } else if (msg.type === "frame_result") {
+          if (msg.type === "frame_result") {
             if (msg.has_violations && msg.violations?.length > 0)
               setViolations((prev) => [...prev, ...msg.violations].slice(-20))
             if (msg.session_flagged) setSessionFlagged(true)
@@ -126,47 +116,6 @@ export function useProctoring(
     proctoringWsRef.current = null
   }, [])
 
-  const handleFaceViolation = useCallback(
-    (type: "identity_mismatch" | "no_face_detected", score: number) => {
-      const v: Violation = {
-        violation_type: type,
-        severity: "HIGH",
-        message:
-          type === "identity_mismatch"
-            ? `Identity mismatch (score: ${score.toFixed(2)})`
-            : "No face detected in frame",
-        timestamp: new Date().toISOString(),
-      }
-      setViolations((prev) => [...prev, v].slice(-20))
-
-      const ws = proctoringWsRef.current
-      if (ws?.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: "client_violation",
-            violation_type: type,
-            metadata: { confidence_score: score, source: "face_api_client" },
-          })
-        )
-      }
-    },
-    []
-  )
-
-  const handleFaceFlag = useCallback(() => {
-    setSessionFlagged(true)
-    const ws = proctoringWsRef.current
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(
-        JSON.stringify({
-          type: "client_violation",
-          violation_type: "identity_mismatch",
-          metadata: { flagged: true, source: "face_api_client" },
-        })
-      )
-    }
-  }, [])
-
   return {
     proctoringActive,
     sessionFlagged,
@@ -176,7 +125,5 @@ export function useProctoring(
     cleanupCamera,
     connectWebSocket,
     endSession,
-    handleFaceViolation,
-    handleFaceFlag,
   }
 }

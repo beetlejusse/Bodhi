@@ -15,11 +15,6 @@ interface ProctoringPanelProps {
   sessionFlagged: boolean
   violations: Violation[]
   cameraError: string
-  faceVerification?: {
-    isActive: boolean
-    lastScore: number | null
-    consecutiveMismatches: number
-  }
 }
 
 export function ProctoringPanel({
@@ -28,7 +23,6 @@ export function ProctoringPanel({
   sessionFlagged,
   violations,
   cameraError,
-  faceVerification,
 }: ProctoringPanelProps) {
   return (
     <div className="space-y-4">
@@ -47,61 +41,6 @@ export function ProctoringPanel({
           </p>
         )}
       </div>
-
-      {/* Face Verification Status */}
-      {faceVerification?.isActive && (
-        <div className="glass rounded-2xl p-4 shadow-[0px_2px_8px_rgba(55,50,47,0.06)]">
-          <div className="flex items-center gap-2 mb-3">
-            <div
-              className={`h-2 w-2 rounded-full ${
-                faceVerification.consecutiveMismatches > 0
-                  ? "bg-red-500"
-                  : "bg-green-500 animate-pulse"
-              }`}
-            />
-            <span className="text-xs font-semibold text-[#37322F]">
-              Identity Verification
-            </span>
-          </div>
-          {faceVerification.lastScore !== null && (
-            <div className="space-y-2">
-              <div className="flex justify-between text-xs">
-                <span className="text-[rgba(55,50,47,0.5)]">Match Score</span>
-                <span
-                  className={`font-semibold ${
-                    faceVerification.lastScore > 0.5
-                      ? "text-green-600"
-                      : "text-red-600"
-                  }`}
-                >
-                  {(faceVerification.lastScore * 100).toFixed(0)}%
-                </span>
-              </div>
-              <div className="w-full h-2 bg-[rgba(55,50,47,0.08)] rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-300 ${
-                    faceVerification.lastScore > 0.5
-                      ? "bg-green-500"
-                      : "bg-red-500"
-                  }`}
-                  style={{ width: `${faceVerification.lastScore * 100}%` }}
-                />
-              </div>
-            </div>
-          )}
-          {faceVerification.consecutiveMismatches > 0 && (
-            <p className="text-xs text-red-600 mt-2 flex items-center gap-1">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-              </svg>
-              {faceVerification.consecutiveMismatches} consecutive mismatch
-              {faceVerification.consecutiveMismatches > 1 ? "es" : ""}
-            </p>
-          )}
-        </div>
-      )}
 
       {/* Proctoring Status */}
       <div className="glass rounded-2xl p-4 shadow-[0px_2px_8px_rgba(55,50,47,0.06)]">

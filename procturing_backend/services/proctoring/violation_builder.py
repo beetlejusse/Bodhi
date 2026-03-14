@@ -17,7 +17,6 @@ VIOLATION_MESSAGES: Dict[ViolationType, str] = {
     ViolationType.NO_FACE_DETECTED:     "Your face is not visible. Please position yourself in front of the camera.",
     ViolationType.MULTIPLE_FACES:       "Multiple faces detected. Only the candidate should be visible on camera.",
     ViolationType.FACE_NOT_CENTERED:    "Please center your face in the camera frame.",
-    ViolationType.IDENTITY_MISMATCH:    "Face verification failed. Please ensure you are the registered candidate.",
     ViolationType.GAZE_DEVIATION:       "Please keep your eyes focused on the screen.",
     ViolationType.LOOKING_AWAY:         "You appear to be looking away from the screen.",
     ViolationType.PHONE_DETECTED:       "A mobile phone has been detected. Please remove it from view.",

@@ -9,7 +9,6 @@ class ViolationType(str, Enum):
     NO_FACE_DETECTED = "no_face_detected"
     MULTIPLE_FACES = "multiple_faces"
     FACE_NOT_CENTERED = "face_not_centered"
-    IDENTITY_MISMATCH = "identity_mismatch"
 
     # gaze related
     GAZE_DEVIATION = "gaze_deviation"
@@ -45,7 +44,6 @@ VIOLATION_SEVERITY_MAP: Dict[ViolationType, ViolationSeverity] = {
     ViolationType.COPY_PASTE_ATTEMPT:  ViolationSeverity.MEDIUM,
     ViolationType.NO_FACE_DETECTED:    ViolationSeverity.MEDIUM,
 
-    ViolationType.IDENTITY_MISMATCH:   ViolationSeverity.HIGH,
     ViolationType.MULTIPLE_FACES:      ViolationSeverity.HIGH,
     ViolationType.PHONE_DETECTED:      ViolationSeverity.HIGH,
     ViolationType.TAB_SWITCH:          ViolationSeverity.HIGH,
@@ -77,7 +75,6 @@ class FrameAnalysisResult(BaseModel):
     has_face: bool = False
     face_count: int = 0
     face_centered: bool = False
-    identity_verified: Optional[bool] = None
     gaze_deviation: Optional[float] = None
     looking_away: bool = False
     detected_objects: list = []
