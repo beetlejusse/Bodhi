@@ -568,8 +568,6 @@ export default function InterviewPage() {
     setPhase("processing");
     try {
       await initCamera();
-      // Load face-api models in background (non-blocking)
-      faceVerification.loadModels();
       setPhase("setup");
     } catch (err) {
       setError(String(err));
@@ -580,7 +578,6 @@ export default function InterviewPage() {
   // ── Step 2: setup complete → start the actual interview ───────────────────
 
   const handleSetupComplete = async () => {
-    if (!consentAccepted || !referencePhotoB64) return;
     setError("");
     setPhase("processing");
     phaseRef.current = "processing";
@@ -594,11 +591,10 @@ export default function InterviewPage() {
       if (meta.session) setSessionId(meta.session);
       if (meta.text) setTranscript([{ speaker: "bodhi", text: meta.text, phase: "intro" }]);
 
-      if (meta.session) {
-        // Server-side proctoring (DeepFace)
+      if (meta.session && referencePhotoB64) {
+        // Server-side proctoring (DeepFace) — only if reference photo was captured
         connectProctoringWs(meta.session, referencePhotoB64);
         // Client-side verification starts once proctoring WS enrolls
-        // (start after a short delay to let enrollment complete)
         setTimeout(() => {
           if (faceVerification.hasReference) faceVerification.startVerification();
         }, 3000);
@@ -751,13 +747,13 @@ export default function InterviewPage() {
 
   // ── Setup: consent + reference photo ──────────────────────────────────────
   if (phase === "setup") {
-    const canStart = consentAccepted && !!referencePhotoB64;
+    const hasVerification = consentAccepted && !!referencePhotoB64;
     return (
       <div className="mx-auto max-w-lg space-y-5 pt-8">
         <div>
           <h1 className="text-2xl font-bold">Identity Verification Setup</h1>
           <p className="text-sm text-zinc-400 mt-1">
-            Before the interview begins, please complete the two steps below.
+            Optionally set up identity verification before starting.
           </p>
         </div>
 
@@ -789,17 +785,15 @@ export default function InterviewPage() {
             className="flex-1 rounded border border-[var(--border)] py-2.5 text-sm text-zinc-400 hover:text-white transition">
             ← Back
           </button>
-          <button type="button" onClick={handleSetupComplete} disabled={!canStart}
-            className="flex-1 rounded border border-white py-2.5 text-sm font-medium text-white transition hover:bg-white hover:text-black disabled:opacity-40 disabled:cursor-not-allowed">
-            Start Interview
+          <button type="button" onClick={handleSetupComplete}
+            className="flex-1 rounded border border-white py-2.5 text-sm font-medium text-white transition hover:bg-white hover:text-black">
+            {hasVerification ? "Start Interview" : "Skip & Start →"}
           </button>
         </div>
 
-        {!canStart && (
-          <p className="text-center text-xs text-zinc-600">
-            {!consentAccepted && !referencePhotoB64 && "Accept consent and set a reference photo to continue."}
-            {consentAccepted && !referencePhotoB64 && "Set a reference photo to continue."}
-            {!consentAccepted && referencePhotoB64 && "Accept the consent notice to continue."}
+        {!hasVerification && (
+          <p className="text-center text-xs text-zinc-500">
+            Identity verification is optional — you can skip it and start immediately.
           </p>
         )}
 
