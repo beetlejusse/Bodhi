@@ -1,132 +1,145 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { type Role, listRoles, createRole, deleteRole } from "@/lib/api";
+import { useEffect, useState } from "react"
+import Navbar from "@/components/Navbar"
+import { PageHeader } from "@/components/ui/page-header"
+import { StatusMessage } from "@/components/ui/status-message"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { EmptyState } from "@/components/ui/empty-state"
+import { FormCard } from "@/components/ui/form-card"
+import { FormInput } from "@/components/ui/form-input"
+import { PrimaryButton } from "@/components/ui/primary-button"
+import { DataTable } from "@/components/ui/data-table"
+import { type Role, listRoles, createRole, deleteRole } from "@/lib/api"
 
 export default function RolesPage() {
-  const [roles, setRoles] = useState<Role[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [msg, setMsg] = useState("");
+  const [roles, setRoles] = useState<Role[]>([])
+  const [loading, setLoading] = useState(true)
+  const [msg, setMsg] = useState("")
+  const [msgType, setMsgType] = useState<"success" | "error">("success")
 
   const [form, setForm] = useState({
     role_name: "",
     description: "",
     focus_areas: "",
     typical_topics: "",
-  });
+  })
 
   const load = () => {
-    setLoading(true);
+    setLoading(true)
     listRoles()
       .then(setRoles)
-      .catch((e) => setMsg(String(e)))
-      .finally(() => setLoading(false));
-  };
+      .catch((e) => {
+        setMsg(String(e))
+        setMsgType("error")
+      })
+      .finally(() => setLoading(false))
+  }
 
-  useEffect(load, []);
+  useEffect(load, [])
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMsg("");
+  const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setMsg("")
     try {
-      await createRole(form);
-      setForm({ role_name: "", description: "", focus_areas: "", typical_topics: "" });
-      load();
-      setMsg("Role created");
+      await createRole(form)
+      setForm({
+        role_name: "",
+        description: "",
+        focus_areas: "",
+        typical_topics: "",
+      })
+      load()
+      setMsg("Role created successfully")
+      setMsgType("success")
     } catch (err) {
-      setMsg(String(err));
+      setMsg(String(err))
+      setMsgType("error")
     }
-  };
+  }
 
-  const handleDelete = async (name: string) => {
+  const handleDelete = async (role: Role) => {
     try {
-      await deleteRole(name);
-      load();
+      await deleteRole(role.role_name)
+      load()
     } catch (err) {
-      setMsg(String(err));
+      setMsg(String(err))
+      setMsgType("error")
     }
-  };
+  }
+
+  const columns = [
+    { header: "Name", accessor: "role_name" as keyof Role },
+    {
+      header: "Description",
+      accessor: "description" as keyof Role,
+      hideOnMobile: true,
+    },
+    {
+      header: "Focus Areas",
+      accessor: "focus_areas" as keyof Role,
+      hideOnTablet: true,
+    },
+  ]
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Role Profiles</h1>
+    <div className="min-h-screen bg-[#F7F5F3] font-sans">
+      <Navbar />
 
-      {msg && (
-        <div className="rounded border border-[var(--border)] bg-[var(--card)] px-4 py-2 text-sm">
-          {msg}
+      <main className="pt-20 pb-12 px-4 sm:px-6 max-w-4xl mx-auto">
+        <PageHeader
+          title="Role Profiles"
+          description="Define roles you're applying for so Bodhi can tailor interview questions and feedback."
+        />
+
+        {msg && <StatusMessage message={msg} type={msgType} />}
+
+        <FormCard title="Add Role" onSubmit={handleCreate}>
+          <FormInput
+            placeholder="Role name * (e.g. Senior Software Engineer)"
+            required
+            value={form.role_name}
+            onChange={(e) => setForm({ ...form, role_name: e.target.value })}
+            fullWidth
+          />
+          <FormInput
+            placeholder="Description"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+          />
+          <FormInput
+            placeholder="Focus areas (e.g. System Design, DSA)"
+            value={form.focus_areas}
+            onChange={(e) => setForm({ ...form, focus_areas: e.target.value })}
+          />
+          <FormInput
+            placeholder="Typical topics"
+            value={form.typical_topics}
+            onChange={(e) =>
+              setForm({ ...form, typical_topics: e.target.value })
+            }
+            fullWidth
+          />
+          <PrimaryButton type="submit" fullWidth>
+            Save Role Profile
+          </PrimaryButton>
+        </FormCard>
+
+        <div style={{ animationDelay: "0.2s" }}>
+          {loading ? (
+            <LoadingSpinner />
+          ) : roles.length === 0 ? (
+            <EmptyState message="No role profiles yet. Add one above to personalise your interviews." />
+          ) : (
+            <DataTable
+              columns={columns}
+              data={roles}
+              onDelete={handleDelete}
+              getKey={(r) => r.id}
+            />
+          )}
         </div>
-      )}
-
-      <form
-        onSubmit={handleCreate}
-        className="grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 sm:grid-cols-2"
-      >
-        <input
-          placeholder="Role name *"
-          required
-          value={form.role_name}
-          onChange={(e) => setForm({ ...form, role_name: e.target.value })}
-          className="rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-        />
-        <input
-          placeholder="Description"
-          value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
-          className="rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-        />
-        <input
-          placeholder="Focus areas"
-          value={form.focus_areas}
-          onChange={(e) => setForm({ ...form, focus_areas: e.target.value })}
-          className="rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-        />
-        <input
-          placeholder="Typical topics"
-          value={form.typical_topics}
-          onChange={(e) => setForm({ ...form, typical_topics: e.target.value })}
-          className="rounded border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
-        />
-        <button
-          type="submit"
-          className="col-span-full rounded border border-white px-4 py-2 text-sm font-medium text-white transition hover:bg-white hover:text-black"
-        >
-          Create Role
-        </button>
-      </form>
-
-      {loading ? (
-        <p className="text-sm text-zinc-500">Loading...</p>
-      ) : roles.length === 0 ? (
-        <p className="text-sm text-zinc-500">No roles yet.</p>
-      ) : (
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="border-b border-[var(--border)] text-zinc-400">
-              <th className="py-2">Name</th>
-              <th className="py-2">Description</th>
-              <th className="py-2">Focus Areas</th>
-              <th className="py-2 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {roles.map((r) => (
-              <tr key={r.id} className="border-b border-[var(--border)]">
-                <td className="py-2 font-medium">{r.role_name}</td>
-                <td className="py-2 text-zinc-400">{r.description}</td>
-                <td className="py-2 text-zinc-400">{r.focus_areas}</td>
-                <td className="py-2 text-right">
-                  <button
-                    onClick={() => handleDelete(r.role_name)}
-                    className="text-red-400 hover:text-red-300"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+      </main>
     </div>
-  );
+  )
 }

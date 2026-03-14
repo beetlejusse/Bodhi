@@ -1,21 +1,30 @@
+import type React from "react";
 import type { Metadata } from "next";
-import Link from "next/link";
+import { Inter, Instrument_Serif } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
-import AuthControls from "./auth-controls";
+import ClerkUserSync from "../components/ClerkUserSync";
+import ResumeUploadModal from "../components/ResumeUploadModal";
 import "./globals.css";
+
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+  preload: true,
+});
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  variable: "--font-instrument-serif",
+  weight: ["400"],
+  display: "swap",
+  preload: true,
+});
 
 export const metadata: Metadata = {
   title: "Bodhi — AI Mock Interviewer",
   description: "Voice-first AI mock interview platform",
 };
-
-const NAV = [
-  { href: "/", label: "Home" },
-  { href: "/roles", label: "Roles" },
-  { href: "/companies", label: "Companies" },
-  { href: "/documents", label: "Documents" },
-  { href: "/interview", label: "Interview" },
-];
 
 export default function RootLayout({
   children,
@@ -23,29 +32,29 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <ClerkProvider>
-      <html lang="en">
-        <body className="antialiased">
-          <nav className="sticky top-0 z-50 flex items-center gap-1 border-b border-(--border) bg-(--card) px-6 py-3">
-            <span className="mr-4 text-lg font-bold text-white">Bodhi</span>
-            {NAV.map((n) => (
-              <Link
-                key={n.href}
-                href={n.href}
-                className="rounded px-3 py-1.5 text-sm text-zinc-400 transition hover:bg-white/5 hover:text-white"
-              >
-                {n.label}
-              </Link>
-            ))}
-
-            {/* Auth controls */}
-            <div className="ml-auto flex items-center gap-2">
-              <AuthControls />
-            </div>
-          </nav>
-          <main className="mx-auto max-w-5xl px-6 py-8">{children}</main>
-        </body>
-      </html>
-    </ClerkProvider>
+    <html
+      lang="en"
+      className={`${inter.variable} ${instrumentSerif.variable} antialiased`}
+    >
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+        />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Instrument+Serif:wght@400&display=swap"
+        />
+      </head>
+      <body className="font-sans antialiased">
+        <ClerkProvider>
+          <ClerkUserSync />
+          <ResumeUploadModal />
+          {children}
+        </ClerkProvider>
+      </body>
+    </html>
   );
 }

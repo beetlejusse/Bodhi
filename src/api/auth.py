@@ -55,6 +55,7 @@ def verify_clerk_token(
             signing_key.key,
             algorithms=["RS256"],
             options={"verify_aud": False},
+            leeway=60,
         )
         return payload
     except jwt.ExpiredSignatureError:

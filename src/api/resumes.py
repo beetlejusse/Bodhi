@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from src.api.auth import get_current_user_id
 from src.api.deps import get_llm, get_storage
 from src.storage import BodhiStorage
 
@@ -32,6 +33,7 @@ async def upload_resume(
     file: UploadFile = File(...),
     storage: BodhiStorage = Depends(get_storage),
     llm=Depends(get_llm),
+    clerk_user_id: str | None = Depends(get_current_user_id),
 ):
     """Upload a PDF or DOCX resume. Extracts text, parses it with the LLM into a
     structured profile, and stores the result. Returns the new user_id."""
@@ -64,7 +66,7 @@ async def upload_resume(
     except ValueError as exc:
         raise HTTPException(422, f"Resume parsing failed: {exc}") from exc
 
-    user_id = storage.create_user_profile(raw_text, profile)
+    user_id = storage.create_user_profile(raw_text, profile, clerk_user_id=clerk_user_id)
     return ResumeUploadResponse(user_id=user_id, profile=profile)
 
 
