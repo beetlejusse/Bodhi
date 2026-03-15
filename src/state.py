@@ -18,6 +18,16 @@ PHASE_CONFIG: dict[str, dict] = {
 }
 # Total target: ~45 minutes across all phases
 
+# ── Demo mode configuration ────────────────────────────────────────────────
+DEMO_PHASE_CONFIG: dict[str, dict] = {
+    "intro":      {"target_questions": 2,  "max_questions": 3,  "target_minutes": 2},
+    "technical":  {"target_questions": 3,  "max_questions": 5,  "target_minutes": 8},
+    "behavioral": {"target_questions": 3,  "max_questions": 4,  "target_minutes": 5},
+    "dsa":        {"target_questions": 2,  "max_questions": 3,  "target_minutes": 6},
+    "project":    {"target_questions": 2,  "max_questions": 3,  "target_minutes": 5},
+}
+# Shorter sessions for demo/testing purposes
+
 
 class InterviewState(TypedDict, total=False):
     """LangGraph state for a single interview session.
@@ -59,3 +69,7 @@ class InterviewState(TypedDict, total=False):
     phase_start_time: str         # ISO timestamp when current phase started
     pending_probe: str            # if set, bot MUST ask this follow-up before next question
     answer_scores: list           # [{phase, question_num, accuracy, depth, communication, confidence, feedback}, ...]
+    
+    # ── Demo mode ──────────────────────────────────────────────────
+    demo_mode: bool               # if True, phase is locked and no transitions allowed
+    demo_phase: str               # the locked phase for demo mode

@@ -44,6 +44,8 @@ def _process_tool_results(state: InterviewState) -> dict:
 
     On TRANSITION: pops the first question from the new phase queue.
     On SCORE: pops the next question from the current phase queue; tracks probing.
+    
+    Demo mode: Prevents phase transitions when demo_mode=True.
     """
     updates: dict = {}
     last_msg = state["messages"][-1] if state["messages"] else None
@@ -54,6 +56,11 @@ def _process_tool_results(state: InterviewState) -> dict:
     content = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
 
     if content.startswith("TRANSITION:"):
+        # Block transitions in demo mode
+        if state.get("demo_mode", False):
+            log.info("[GRAPH] Demo mode: blocking phase transition")
+            return updates
+        
         new_phase = content.split(":", 1)[1]
         updates["current_phase"] = new_phase
         # Pop first question for the new phase
@@ -124,6 +131,15 @@ def _process_tool_results(state: InterviewState) -> dict:
             next_q = _pop_next_question(state, phase)
             updates["target_question"] = next_q
             updates["queued_questions"] = state.get("queued_questions", {})
+        
+        # In demo mode, auto-end after max questions
+        if state.get("demo_mode", False):
+            from src.state import DEMO_PHASE_CONFIG
+            demo_phase = state.get("demo_phase", phase)
+            max_q = DEMO_PHASE_CONFIG.get(demo_phase, {}).get("max_questions", 3)
+            if q_count >= max_q:
+                updates["should_end"] = True
+                log.info(f"[GRAPH] Demo mode: reached max questions ({max_q}), ending session")
 
         log.info(f"[GRAPH] Score: {composite} (A:{accuracy} D:{depth_score} C:{comm} Cf:{conf}) "
                  f"for {phase} Q{q_count}")

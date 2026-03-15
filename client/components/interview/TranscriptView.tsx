@@ -22,20 +22,20 @@ export function TranscriptView({ transcript, isProcessing, interviewerPersona = 
   }, [transcript, isProcessing])
 
   return (
-    <div className="flex-1 space-y-4 overflow-y-auto rounded-2xl border border-[rgba(55,50,47,0.10)] bg-white p-6 shadow-[0px_2px_8px_rgba(55,50,47,0.06)]">
+    <div className="flex-1 space-y-3 overflow-y-auto rounded-lg border border-[#1e1e1e] bg-[#272822] p-4 shadow-lg font-mono text-sm">
       {transcript.length === 0 && !isProcessing && (
         <div className="flex items-center justify-center h-full text-center">
-          <div className="space-y-2">
-            <div className="w-16 h-16 mx-auto rounded-full bg-[rgba(55,50,47,0.05)] flex items-center justify-center">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[rgba(55,50,47,0.3)]">
+          <div className="space-y-3">
+            <div className="w-16 h-16 mx-auto rounded-full bg-[#3e3d32] flex items-center justify-center">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-[#75715e]">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                 <line x1="12" y1="19" x2="12" y2="23" />
                 <line x1="8" y1="23" x2="16" y2="23" />
               </svg>
             </div>
-            <p className="text-sm text-[rgba(55,50,47,0.45)]">
-              Waiting for interview to start...
+            <p className="text-sm text-[#75715e]">
+              // Waiting for interview to start...
             </p>
           </div>
         </div>
@@ -44,55 +44,47 @@ export function TranscriptView({ transcript, isProcessing, interviewerPersona = 
       {transcript.map((turn, i) => (
         <div
           key={i}
-          className={`flex gap-3 animate-fade-in-up ${
-            turn.speaker === "bodhi" ? "flex-row" : "flex-row-reverse"
-          }`}
+          className="animate-fade-in-up"
         >
-          <div
-            className={`mt-0.5 h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold shadow-sm ${
-              turn.speaker === "bodhi"
-                ? interviewerPersona === "bodhi" ? "bg-[#37322F] text-white" : "bg-[#5D5754] text-white"
-                : "bg-[rgba(55,50,47,0.08)] text-[#37322F]"
-            }`}
-          >
-            {turn.speaker === "bodhi" ? (interviewerPersona === "riya" ? "R" : "B") : "Y"}
-          </div>
-          <div className={`flex-1 ${turn.speaker === "user" ? "text-right" : ""}`}>
+          <div className="flex items-start gap-3 mb-1">
+            <span className={`text-xs font-semibold ${
+              turn.speaker === "bodhi" ? "text-[#66d9ef]" : "text-[#a6e22e]"
+            }`}>
+              {turn.speaker === "bodhi" ? (interviewerPersona === "riya" ? "riya" : "bodhi") : "you"}
+            </span>
             {turn.phase && (
-              <span className="mb-1 inline-block rounded-full bg-[rgba(55,50,47,0.06)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-[rgba(55,50,47,0.5)] font-semibold">
-                {turn.phase}
+              <span className="text-[10px] text-[#75715e] uppercase tracking-wider">
+                // {turn.phase}
               </span>
             )}
-            <div
-              className={`inline-block rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                turn.speaker === "bodhi"
-                  ? "bg-[rgba(55,50,47,0.04)] text-[#37322F]"
-                  : "bg-[#37322F] text-white"
-              }`}
-            >
+          </div>
+          <div className={`pl-3 border-l-2 ${
+            turn.speaker === "bodhi" ? "border-[#66d9ef]" : "border-[#a6e22e]"
+          }`}>
+            <p className={`leading-relaxed ${
+              turn.speaker === "bodhi" ? "text-[#f8f8f2]" : "text-[#e6db74]"
+            }`}>
               {turn.text}
-            </div>
+            </p>
           </div>
         </div>
       ))}
 
       {isProcessing && (
-        <div className="flex gap-3 animate-fade-in-up">
-          <div className={`mt-0.5 h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-sm font-bold shadow-sm ${
-            interviewerPersona === "bodhi" ? "bg-[#37322F] text-white" : "bg-[#5D5754] text-white"
-          }`}>
-            {interviewerPersona === "riya" ? "R" : "B"}
+        <div className="animate-fade-in-up">
+          <div className="flex items-start gap-3 mb-1">
+            <span className="text-xs font-semibold text-[#66d9ef]">
+              {interviewerPersona === "riya" ? "riya" : "bodhi"}
+            </span>
           </div>
-          <div className="flex-1">
-            <div className="inline-block rounded-2xl bg-[rgba(55,50,47,0.04)] px-4 py-2.5">
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-[rgba(55,50,47,0.3)] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="w-2 h-2 bg-[rgba(55,50,47,0.3)] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="w-2 h-2 bg-[rgba(55,50,47,0.3)] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
-                </div>
-                <span className="text-sm text-[rgba(55,50,47,0.5)]">Thinking...</span>
+          <div className="pl-3 border-l-2 border-[#66d9ef]">
+            <div className="flex items-center gap-2">
+              <div className="flex gap-1">
+                <span className="w-1.5 h-1.5 bg-[#66d9ef] rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="w-1.5 h-1.5 bg-[#66d9ef] rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="w-1.5 h-1.5 bg-[#66d9ef] rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
               </div>
+              <span className="text-sm text-[#75715e]">// thinking...</span>
             </div>
           </div>
         </div>

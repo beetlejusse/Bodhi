@@ -344,8 +344,19 @@ export const startInterviewStream = async (data: {
   user_id?: string;
   jd_text?: string;
   interviewer_persona?: "bodhi" | "riya";
+  demo_mode?: boolean;
+  demo_phase?: string;
 }) => {
   const headers = await getAuthHeaders({ "Content-Type": "application/json" });
+  
+  // Use demo endpoint if demo_mode is true
+  if (data.demo_mode && data.demo_phase) {
+    return fetch(`${BASE}/api/interviews/demo/${data.demo_phase}/start-stream`, {
+      method: "POST",
+      headers,
+    });
+  }
+  
   return fetch(`${BASE}/api/interviews/start-stream`, {
     method: "POST",
     headers,
@@ -367,10 +378,14 @@ export const sendMessageStream = async (sessionId: string, text: string) => {
 export const sendAudioStream = async (
   sessionId: string,
   blob: Blob,
-  filename = "audio.webm"
+  filename = "audio.webm",
+  editorContent?: string
 ) => {
   const form = new FormData();
   form.append("file", blob, filename);
+  if (editorContent && editorContent.trim()) {
+    form.append("editor_content", editorContent);
+  }
   const headers = await getAuthHeaders();
   return fetch(`${BASE}/api/interviews/${sessionId}/audio-stream`, {
     method: "POST",
@@ -471,147 +486,3 @@ export const downloadReportPDF = async (sessionId: string) => {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
-
-// ── Gamification ─────────────────────────────────────────────────────────────
-
-export interface UserStats {
-  clerk_user_id: string;
-  display_name: string | null;
-  total_xp: number;
-  total_sessions: number;
-  best_score_pct: number;
-  avg_score_pct: number;
-  current_streak: number;
-  longest_streak: number;
-  last_session_date: string | null;
-  streak_shields: number;
-  rank_tier: string;
-  tier_color: string;
-  tier_progress: {
-    current_tier: string;
-    next_tier: string | null;
-    current_xp: number;
-    needed_xp: number;
-    next_threshold: number;
-    current_threshold: number;
-    progress_pct: number;
-  };
-}
-
-export interface BadgeInfo {
-  id: string;
-  name: string;
-  description: string;
-  icon: string;
-  rarity: "common" | "rare" | "legendary";
-  earned_at: string;
-  session_id: string | null;
-}
-
-export interface SessionHistory {
-  session_id: string;
-  target_company: string;
-  target_role: string;
-  overall_score: number | null;
-  xp_earned: number;
-  started_at: string;
-  ended_at: string | null;
-}
-
-export interface LeaderboardEntry {
-  clerk_user_id: string;
-  display_name: string;
-  total_xp: number;
-  weekly_xp?: number;
-  total_sessions?: number;
-  best_score_pct?: number;
-  current_streak?: number;
-  rank_tier: string;
-  tier_color: string;
-  rank: number;
-}
-
-export interface WeeklyChallenge {
-  id: string;
-  week_start: string;
-  week_end: string;
-  title: string;
-  description: string;
-  challenge_type: string;
-  criteria: Record<string, unknown>;
-  prize_description: string;
-  recruiter_info: Record<string, unknown> | null;
-  max_winners: number;
-  status: string;
-  user_entry: {
-    qualifying_score: number;
-    is_winner: boolean;
-    submitted_at: string;
-  } | null;
-  leaderboard: Array<{
-    clerk_user_id: string;
-    display_name: string;
-    qualifying_score: number;
-    is_winner: boolean;
-    submitted_at: string;
-    rank_tier: string;
-    tier_color: string;
-    rank: number;
-  }>;
-  total_entries: number;
-}
-
-export interface PastChallenge {
-  id: string;
-  week_start: string;
-  week_end: string;
-  title: string;
-  description: string;
-  prize_description: string;
-  max_winners: number;
-  status: string;
-  winners: Array<{
-    display_name: string;
-    qualifying_score: number;
-    rank: number;
-    is_winner: boolean;
-  }>;
-}
-
-export interface SessionXP {
-  xp_earned: number;
-  breakdown: {
-    base?: number;
-    difficulty?: number;
-    behavioral?: number;
-    integrity?: number;
-    streak_multiplier?: number;
-    subtotal?: number;
-    total?: number;
-  };
-  new_badges: BadgeInfo[];
-}
-
-export const getMyStats = () =>
-  request<UserStats>("/api/gamification/stats/me");
-
-export const getMyBadges = () =>
-  request<BadgeInfo[]>("/api/gamification/stats/me/badges");
-
-export const getMyHistory = () =>
-  request<SessionHistory[]>("/api/gamification/stats/me/history");
-
-export const getSessionXP = (sessionId: string) =>
-  request<SessionXP>(`/api/gamification/sessions/${sessionId}/xp`);
-
-export const getGlobalLeaderboard = () =>
-  request<LeaderboardEntry[]>("/api/gamification/leaderboard/global");
-
-export const getWeeklyLeaderboard = () =>
-  request<LeaderboardEntry[]>("/api/gamification/leaderboard/weekly");
-
-export const getCurrentChallenge = () =>
-  request<WeeklyChallenge | null>("/api/gamification/challenges/current");
-
-export const getPastChallenges = () =>
-  request<PastChallenge[]>("/api/gamification/challenges/past");

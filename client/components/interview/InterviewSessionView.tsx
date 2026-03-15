@@ -42,6 +42,7 @@ interface InterviewSessionViewProps {
   sentimentData?: SentimentData | null
   violationCount?: number
   interviewerPersona?: "bodhi" | "riya"
+  onEditorContentChange?: (content: string) => void
 }
 
 export function InterviewSessionView({
@@ -54,10 +55,19 @@ export function InterviewSessionView({
   cameraError,
   sentimentData,
   violationCount = 0,
-  interviewerPersona = "bodhi"
+  interviewerPersona = "bodhi",
+  onEditorContentChange
 }: InterviewSessionViewProps) {
   const [isMicOn, setIsMicOn] = useState(true)
   const [editorContent, setEditorContent] = useState("")
+  
+  const handleEditorChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const content = e.target.value
+    setEditorContent(content)
+    if (onEditorContentChange) {
+      onEditorContentChange(content)
+    }
+  }
 
   const currentTranscript = transcript[transcript.length - 1]
 
@@ -204,22 +214,22 @@ export function InterviewSessionView({
           </div>
         </div>
 
-        {/* Center Canvas/Editor - IDE Style (Light Mode) */}
-        <div className="flex-1 relative bg-[#FFFFFF] flex flex-col">
+        {/* Center Canvas/Editor - IDE Style (Monokai Theme) */}
+        <div className="flex-1 relative bg-[#272822] flex flex-col">
           {/* IDE Toolbar */}
-          <div className="h-10 bg-[#F7F5F3] border-b border-[rgba(55,50,47,0.12)] flex items-center px-4 gap-2">
+          <div className="h-10 bg-[#1e1e1e] border-b border-[#1a1a1a] flex items-center px-4 gap-2">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-[#FF5F56]"></div>
               <div className="w-3 h-3 rounded-full bg-[#FFBD2E]"></div>
               <div className="w-3 h-3 rounded-full bg-[#27C93F]"></div>
             </div>
             <div className="flex-1 flex items-center gap-2 ml-4">
-              <div className="px-3 py-1 bg-white rounded text-xs text-[#37322F] font-mono border border-[rgba(55,50,47,0.12)] shadow-sm">
+              <div className="px-3 py-1 bg-[#3e3d32] rounded text-xs text-[#f8f8f2] font-mono border border-[#1a1a1a] shadow-sm">
                 interview-notes.md
               </div>
             </div>
-            <div className="flex items-center gap-2 text-[#37322F]">
-              <button className="hover:bg-[rgba(55,50,47,0.06)] p-1 rounded transition-colors">
+            <div className="flex items-center gap-2 text-[#75715e]">
+              <button className="hover:bg-[#3e3d32] p-1 rounded transition-colors">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
@@ -230,17 +240,17 @@ export function InterviewSessionView({
           {/* IDE Editor Area */}
           <div className="flex-1 flex overflow-hidden">
             {/* Line Numbers */}
-            <div className="w-12 bg-[#FAFAFA] border-r border-[rgba(55,50,47,0.10)] py-3 text-right pr-3 font-mono text-xs text-[rgba(55,50,47,0.4)] select-none">
+            <div className="w-12 bg-[#272822] border-r border-[#3e3d32] py-3 text-right pr-3 font-mono text-xs text-[#75715e] select-none">
               {Array.from({ length: 30 }, (_, i) => (
                 <div key={i} className="leading-6">{i + 1}</div>
               ))}
             </div>
 
             {/* Editor Content */}
-            <div className="flex-1 relative bg-white">
+            <div className="flex-1 relative bg-[#272822]">
               <Textarea
                 value={editorContent}
-                onChange={(e) => setEditorContent(e.target.value)}
+                onChange={handleEditorChange}
                 placeholder="# Interview Notes
 
 ## Key Points
@@ -254,9 +264,9 @@ export function InterviewSessionView({
 
 ## Follow-up Items
 - "
-                className="w-full h-full bg-transparent border-0 text-[#2F3037] placeholder:text-[rgba(55,50,47,0.35)] resize-none font-mono text-sm p-3 leading-6 focus:outline-none focus:ring-0"
+                className="w-full h-full bg-transparent border-0 text-[#f8f8f2] placeholder:text-[#75715e] resize-none font-mono text-sm p-3 leading-6 focus:outline-none focus:ring-0"
                 style={{ 
-                  caretColor: '#37322F',
+                  caretColor: '#f8f8f2',
                   lineHeight: '1.5rem'
                 }}
               />

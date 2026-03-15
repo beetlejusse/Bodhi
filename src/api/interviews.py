@@ -6,8 +6,9 @@ import base64
 import os
 import uuid
 import urllib.parse
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Form
 from fastapi.responses import StreamingResponse
 
 from langchain_core.messages import HumanMessage
@@ -1095,13 +1096,14 @@ async def send_audio_stream(
     session_id: str,
     file: UploadFile = File(...),
     image_file: Optional[UploadFile] = File(None),
+    editor_content: Optional[str] = Form(None),
     user_id: str = Depends(require_auth),
     graph=Depends(get_graph),
     storage: BodhiStorage = Depends(get_storage),
     cache: BodhiCache | None = Depends(get_cache),
     sarvam_key: str = Depends(get_sarvam_key),
 ):
-    """Upload WAV audio (+ optional webcam frame) and stream reply audio as MP3."""
+    """Upload WAV audio (+ optional webcam frame + optional editor content) and stream reply audio as MP3."""
     graph_config = {"configurable": {"thread_id": session_id}}
 
     try:
@@ -1130,6 +1132,25 @@ async def send_audio_stream(
     transcript = (transcript or "").strip()
     if not transcript:
         raise HTTPException(422, "Could not transcribe audio")
+    
+    # ── Append editor content if provided (for technical/DSA phases) ──────────
+    user_input = transcript
+    if editor_content and editor_content.strip():
+        # Get current phase to determine if we should include editor context
+        try:
+            state = graph.get_state(graph_config)
+            current_phase = state.values.get("current_phase", "") if state and state.values else ""
+            
+            # Only include editor content for technical and DSA phases
+            if current_phase in ["technical", "dsa"]:
+                user_input = (
+                    f"{transcript}\n\n"
+                    f"[Code Editor Content]:\n"
+                    f"```\n{editor_content.strip()}\n```"
+                )
+                _stream_log.info(f"[AUDIO-STREAM] Including editor content ({len(editor_content)} chars) for {current_phase} phase")
+        except Exception as e:
+            _stream_log.warning(f"Failed to check phase for editor content: {e}")
 
     # ── Sentiment analysis ────────────────────────────────────────────────────
     loop = asyncio.get_running_loop()
@@ -1208,7 +1229,7 @@ async def send_audio_stream(
     result = await loop.run_in_executor(
         None,
         lambda: graph.invoke(
-            {"messages": [HumanMessage(content=transcript)]},
+            {"messages": [HumanMessage(content=user_input)]},
             config=graph_config,
         ),
     )
@@ -1597,3 +1618,149 @@ def _generate_pdf_report(report_data: dict) -> bytes:
     buffer.close()
     
     return pdf_bytes
+
+
+
+# ── Demo Mode Endpoints ───────────────────────────────────────────────────────
+
+@router.post("/demo/{phase}/start-stream")
+async def start_demo_interview_stream(
+    phase: str,
+    user_id: str = Depends(require_auth),
+    graph=Depends(get_graph),
+    storage: BodhiStorage = Depends(get_storage),
+    cache: BodhiCache | None = Depends(get_cache),
+    sarvam_key: str = Depends(get_sarvam_key),
+):
+    """Start a demo interview locked to a specific phase.
+    
+    Available phases: intro, technical, behavioral, dsa, project
+    
+    Uses GrowthX as the default company for context.
+    """
+    from src.state import PHASES, DEMO_PHASE_CONFIG
+    import json
+    
+    # Validate phase
+    valid_demo_phases = ["intro", "technical", "behavioral", "dsa", "project"]
+    if phase not in valid_demo_phases:
+        raise HTTPException(400, f"Invalid phase. Must be one of: {', '.join(valid_demo_phases)}")
+    
+    loop = asyncio.get_event_loop()
+    session_id = f"demo-{phase}-{uuid.uuid4().hex[:8]}"
+    
+    # Use GrowthX as default company
+    company = "GrowthX"
+    role = "Software Engineer"
+    candidate_name = "Demo User"
+    
+    _stream_log.info("[DEMO-START] Session %s: phase=%s", session_id, phase)
+    
+    # Load GrowthX context
+    entity_context = await loop.run_in_executor(
+        None, lambda: _load_entity_context(company, role, cache, storage)
+    )
+    suggested_topics = await loop.run_in_executor(
+        None, lambda: _load_suggested_topics(company, role, cache)
+    )
+    
+    # Generate curriculum for the specific phase only
+    curriculum = {}
+    if phase in ["technical", "dsa"]:
+        full_curriculum = await loop.run_in_executor(
+            None, lambda: generate_interview_curriculum(company, role, storage)
+        )
+        if phase in full_curriculum:
+            curriculum[phase] = full_curriculum[phase]
+    
+    if cache and curriculum:
+        for p, questions in curriculum.items():
+            cache.set_question_queue(session_id, p, questions)
+    
+    # Create session in database
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: storage.create_session(
+                session_id,
+                candidate_name,
+                company,
+                role,
+                clerk_user_id=user_id,
+            ),
+        )
+    except Exception:
+        pass
+    
+    # Build initial state with demo mode enabled
+    graph_config = {"configurable": {"thread_id": session_id}}
+    
+    # Phase-specific greeting prompts
+    phase_greetings = {
+        "intro": "Hello! I'm ready to introduce myself.",
+        "technical": "Hello! I'm ready for technical questions.",
+        "behavioral": "Hello! I'm ready for behavioral questions.",
+        "dsa": "Hello! I'm ready for coding and algorithm questions.",
+        "project": "Hello! I'm ready to discuss my projects.",
+    }
+    
+    initial_state = {
+        "messages": [HumanMessage(content=phase_greetings.get(phase, "Hello!"))],
+        "session_id": session_id,
+        "candidate_name": candidate_name,
+        "target_company": company,
+        "target_role": role,
+        "current_phase": phase,
+        "difficulty_level": 3,
+        "interviewer_persona": "bodhi",
+        "phase_scores": {},
+        "entity_context": entity_context,
+        "suggested_topics": suggested_topics,
+        "should_end": False,
+        "queued_questions": curriculum,
+        "target_question": "",
+        "interview_mode": "standard",
+        "candidate_profile": {},
+        "jd_context": "",
+        "gap_map": {},
+        "demo_mode": True,
+        "demo_phase": phase,
+        "phase_question_count": 0,
+        "phase_start_time": datetime.now(timezone.utc).isoformat(),
+    }
+    
+    _stream_log.info("[DEMO-START] Session %s: invoking graph for greeting...", session_id)
+    result = await loop.run_in_executor(
+        None, lambda: graph.invoke(initial_state, config=graph_config)
+    )
+    greeting = _extract_text(
+        result["messages"][-1].content
+        if result["messages"] and hasattr(result["messages"][-1], "content")
+        else ""
+    )
+    _stream_log.info("[DEMO-START] Session %s: greeting ready (%d chars)", session_id, len(greeting))
+    
+    if not sarvam_key or not greeting:
+        raise HTTPException(500, "TTS not available")
+    
+    # Get phase config for frontend
+    phase_config = DEMO_PHASE_CONFIG.get(phase, {})
+    curriculum_json = json.dumps({
+        "phase": phase,
+        "max_questions": phase_config.get("max_questions", 3),
+        "demo_mode": True,
+    })
+    
+    headers = _stream_headers(
+        Session=session_id,
+        Text=greeting,
+        Phase=phase,
+        End="false",
+        Curriculum=curriculum_json,
+    )
+    
+    return StreamingResponse(
+        _tts_stream_generator(greeting, sarvam_key, speaker="shubh"),
+        media_type="audio/mpeg",
+        headers=headers,
+    )
