@@ -486,7 +486,19 @@ function RoleDetail({ role, onDelete, onClose }: RoleDetailProps) {
       </div>
 
       {/* Footer */}
-      <div className="px-8 py-6 border-t border-[rgba(55,50,47,0.08)] bg-gradient-to-br from-[#FAFAFA] to-white">
+      <div className="px-8 py-6 border-t border-[rgba(55,50,47,0.08)] bg-gradient-to-br from-[#FAFAFA] to-white space-y-3">
+        <button
+          onClick={() => {
+            const params = new URLSearchParams({
+              role: role.role_name,
+            })
+            window.location.href = `/interview?${params.toString()}`
+          }}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-gradient-to-r from-[#37322F] to-[#2A2624] text-white hover:from-[#2A2624] hover:to-[#1F1C1A] transition-all font-semibold shadow-md hover:shadow-lg"
+        >
+          <Briefcase className="w-4 h-4" />
+          <span>Try Interview</span>
+        </button>
         <button
           onClick={() => onDelete(role)}
           className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-white text-red-600 hover:bg-red-50 transition-all font-semibold border-2 border-red-200 hover:border-red-300 shadow-sm hover:shadow-md"
