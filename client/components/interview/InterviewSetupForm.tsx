@@ -8,6 +8,7 @@ import { type CandidateProfile, uploadResume } from "@/lib/api"
 interface InterviewSetupFormProps {
   onSubmit: (formData: InterviewFormData) => void
   loading?: boolean
+  initialData?: Partial<InterviewFormData>
 }
 
 export interface InterviewFormData {
@@ -20,19 +21,19 @@ export interface InterviewFormData {
   interviewer_persona: "bodhi" | "riya"
 }
 
-export function InterviewSetupForm({ onSubmit, loading }: InterviewSetupFormProps) {
+export function InterviewSetupForm({ onSubmit, loading, initialData }: InterviewSetupFormProps) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState("")
   const [uploadedProfile, setUploadedProfile] = useState<CandidateProfile | null>(null)
   
   const [form, setForm] = useState<InterviewFormData>({
-    candidate_name: "",
-    company: "",
-    role: "Software Engineer",
-    mode: "standard",
-    user_id: "",
-    jd_text: "",
-    interviewer_persona: "bodhi",
+    candidate_name: initialData?.candidate_name || "",
+    company: initialData?.company || "",
+    role: initialData?.role || "Software Engineer",
+    mode: initialData?.mode || "standard",
+    user_id: initialData?.user_id || "",
+    jd_text: initialData?.jd_text || "",
+    interviewer_persona: initialData?.interviewer_persona || "bodhi",
   })
 
   const handleResumeUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -67,6 +68,17 @@ export function InterviewSetupForm({ onSubmit, loading }: InterviewSetupFormProp
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 animate-fade-in-up">
           {error}
+        </div>
+      )}
+
+      {(initialData?.company || initialData?.role) && (
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 animate-fade-in-up">
+          <p className="font-medium">Pre-filled from your profile</p>
+          <p className="text-xs mt-1 text-blue-600">
+            {initialData.company && `Company: ${initialData.company}`}
+            {initialData.company && initialData.role && " • "}
+            {initialData.role && `Role: ${initialData.role}`}
+          </p>
         </div>
       )}
 

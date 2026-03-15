@@ -86,20 +86,29 @@ export default function InterviewPage() {
     const params = new URLSearchParams(window.location.search)
     const mode = params.get("mode") as "option_a" | "option_b" | null
     const userId = params.get("user_id")
-    if (mode && userId && phase === "idle") {
-      setFormData((prev) => ({
-        ...(prev || {
-          candidate_name: "",
-          company: "",
-          role: "Software Engineer",
-          mode: "standard",
-          user_id: "",
-          jd_text: "",
-          interviewer_persona: "bodhi",
-        }),
-        mode,
-        user_id: userId,
-      }))
+    const company = params.get("company")
+    const role = params.get("role")
+    
+    if (phase === "idle") {
+      const baseFormData = {
+        candidate_name: "",
+        company: company || "",
+        role: role || "Software Engineer",
+        mode: "standard" as const,
+        user_id: "",
+        jd_text: "",
+        interviewer_persona: "bodhi" as const,
+      }
+      
+      if (mode && userId) {
+        setFormData({
+          ...baseFormData,
+          mode,
+          user_id: userId,
+        })
+      } else if (company || role) {
+        setFormData(baseFormData)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -248,7 +257,11 @@ export default function InterviewPage() {
             </div>
           )}
           <div className="rounded-2xl border border-[rgba(55,50,47,0.10)] bg-white p-6 shadow-[0px_2px_8px_rgba(55,50,47,0.06)] animate-fade-in-up">
-            <InterviewSetupForm onSubmit={handleFormSubmit} loading={phase !== "idle"} />
+            <InterviewSetupForm 
+              onSubmit={handleFormSubmit} 
+              loading={phase !== "idle"}
+              initialData={formData || undefined}
+            />
           </div>
         </div>
       </div>
