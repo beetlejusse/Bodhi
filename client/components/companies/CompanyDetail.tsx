@@ -113,12 +113,13 @@ export function CompanyDetail({ company, index, onDelete, onClose }: CompanyDeta
               <div className="pl-10">
                 <div className="flex flex-wrap gap-2">
                   {company.tech_stack.split(",").map((tech, i) => (
-                    <span
+                    <Badge
                       key={`${tech}-${i}`}
-                      className="rounded-lg bg-white border-2 border-[rgba(55,50,47,0.08)] px-3 py-1.5 text-sm font-medium text-[#2F3037] shadow-sm hover:border-[rgba(55,50,47,0.15)] hover:shadow-md transition-all"
+                      variant="secondary"
+                      className="px-3 py-1.5 text-sm font-medium rounded-lg"
                     >
                       {tech.trim()}
-                    </span>
+                    </Badge>
                   ))}
                 </div>
               </div>
@@ -127,8 +128,21 @@ export function CompanyDetail({ company, index, onDelete, onClose }: CompanyDeta
         </div>
       </div>
 
-      {/* Footer with Delete Button */}
-      <div className="px-8 py-6 border-t border-[rgba(55,50,47,0.08)] bg-gradient-to-br from-[#FAFAFA] to-white">
+      {/* Footer with Action Buttons */}
+      <div className="px-8 py-6 border-t border-[rgba(55,50,47,0.08)] bg-gradient-to-br from-[#FAFAFA] to-white space-y-3">
+        <button
+          onClick={() => {
+            const params = new URLSearchParams({
+              company: company.company_name,
+              role: company.role,
+            })
+            window.location.href = `/interview?${params.toString()}`
+          }}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-gradient-to-r from-[#37322F] to-[#2A2624] text-white hover:from-[#2A2624] hover:to-[#1F1C1A] transition-all font-semibold shadow-md hover:shadow-lg"
+        >
+          <Briefcase className="w-4 h-4" />
+          <span>Try Interview</span>
+        </button>
         <button
           onClick={() => onDelete(company)}
           className="w-full flex items-center justify-center gap-2 px-4 py-3.5 rounded-xl bg-white text-red-600 hover:bg-red-50 transition-all font-semibold border-2 border-red-200 hover:border-red-300 shadow-sm hover:shadow-md"
