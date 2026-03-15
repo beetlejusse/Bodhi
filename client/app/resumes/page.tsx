@@ -121,7 +121,7 @@ export default function ResumesPage() {
                 />
               )}
 
-              {existingProfile.skills.length > 0 && (
+              {existingProfile.skills && existingProfile.skills.length > 0 && (
                 <div>
                   <FieldLabel>Skills</FieldLabel>
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -137,7 +137,7 @@ export default function ResumesPage() {
                 </div>
               )}
 
-              {existingProfile.experience.length > 0 && (
+              {existingProfile.experience && existingProfile.experience.length > 0 && (
                 <div>
                   <FieldLabel>Experience</FieldLabel>
                   <div className="space-y-3 mt-2">
@@ -161,7 +161,7 @@ export default function ResumesPage() {
                 </div>
               )}
 
-              {existingProfile.education.length > 0 && (
+              {existingProfile.education && existingProfile.education.length > 0 && (
                 <div>
                   <FieldLabel>Education</FieldLabel>
                   <div className="space-y-2 mt-2">
@@ -322,7 +322,7 @@ export default function ResumesPage() {
                 />
               )}
 
-              {result.profile.skills.length > 0 && (
+              {result.profile.skills && result.profile.skills.length > 0 && (
                 <div>
                   <FieldLabel>Skills</FieldLabel>
                   <div className="flex flex-wrap gap-2 mt-2">
@@ -338,7 +338,7 @@ export default function ResumesPage() {
                 </div>
               )}
 
-              {result.profile.experience.length > 0 && (
+              {result.profile.experience && result.profile.experience.length > 0 && (
                 <div>
                   <FieldLabel>Experience</FieldLabel>
                   <div className="space-y-3 mt-2">
@@ -362,7 +362,7 @@ export default function ResumesPage() {
                 </div>
               )}
 
-              {result.profile.education.length > 0 && (
+              {result.profile.education && result.profile.education.length > 0 && (
                 <div>
                   <FieldLabel>Education</FieldLabel>
                   <div className="space-y-2 mt-2">
