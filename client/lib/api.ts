@@ -99,6 +99,7 @@ export interface CompanyProfile {
   tech_stack: string | null;
   contributed_by: string | null;
   updated_at: string;
+  custom_metrics?: string[] | null;
 }
 
 export const listCompanies = () => request<CompanyProfile[]>("/api/companies");
@@ -464,6 +465,8 @@ export interface InterviewReport {
     total_data_points: number;
   };
   hiring_recommendation: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  custom_metric_scores?: Record<string, any>;
   session_info: {
     candidate_name: string;
     target_company: string;

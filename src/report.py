@@ -41,6 +41,7 @@ def generate_report(
     sentiment_data: list[dict] | None = None,
     session_info: dict | None = None,
     transcript_text: str = "",
+    custom_metrics: list[str] | None = None,
 ) -> dict:
     """Build a structured performance report from session data.
 
@@ -123,7 +124,8 @@ def generate_report(
         transcript_text=transcript_text,
         sentiment_summary=behavioral_summary,
         proctoring_summary=proctoring_summary,
-        phase_scores=phase_scores
+        phase_scores=phase_scores,
+        custom_metrics=custom_metrics or [],
     )
 
     cross_insights = agentic_data.get("cross_section_insights") or cross_insights

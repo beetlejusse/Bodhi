@@ -138,6 +138,41 @@ def _load_suggested_topics(company: str, role: str, cache) -> str:
     return "\n".join(f"  - {t}" for t in topics)
 
 
+def _seniority_to_difficulty(candidate_profile: dict) -> int:
+    """Derive an initial interview difficulty from the candidate's parsed resume profile.
+
+    Mapping:
+      intern / junior / 0-2 yrs  → 2  (fundamentals focused)
+      mid / 2-6 yrs              → 3  (balanced depth)
+      senior / 7-9 yrs           → 4  (system design & trade-offs)
+      staff / principal / 10+    → 5  (architecture & leadership)
+    """
+    seniority = (candidate_profile.get("seniority_level") or "").lower()
+    years = candidate_profile.get("years_of_experience") or 0
+    try:
+        years = float(years)
+    except (TypeError, ValueError):
+        years = 0
+
+    level_map = {
+        "intern": 2, "junior": 2,
+        "mid": 3,
+        "senior": 4,
+        "staff": 5, "principal": 5, "executive": 5,
+    }
+    # Use explicit seniority_level first
+    if seniority in level_map:
+        return level_map[seniority]
+    # Fall back to years_of_experience
+    if years < 2:
+        return 2
+    if years < 7:
+        return 3
+    if years < 10:
+        return 4
+    return 5
+
+
 _CURRICULUM_PROMPT = """\
 You are an expert technical interviewer preparing a custom interview curriculum.
 Generate exactly 2 targeted questions for each of the following 2 phases for a {role} at {company}.
@@ -265,13 +300,16 @@ async def prepare_interview(
     except Exception:
         pass
 
+    # Determine initial difficulty from candidate seniority
+    difficulty_level = _seniority_to_difficulty(candidate_profile) if candidate_profile else 3
+
     initial_state_data = {
         "session_id": session_id,
         "candidate_name": body.candidate_name,
         "target_company": body.company,
         "target_role": body.role,
         "current_phase": "intro",
-        "difficulty_level": 3,
+        "difficulty_level": difficulty_level,
         "phase_scores": {},
         "entity_context": entity_context,
         "suggested_topics": suggested_topics,
@@ -333,6 +371,9 @@ async def start_interview(
     except Exception:
         pass
 
+    # Determine initial difficulty from candidate seniority
+    difficulty_level = _seniority_to_difficulty(candidate_profile) if candidate_profile else 3
+
     graph_config = {"configurable": {"thread_id": session_id}}
     initial_state = {
         "messages": [HumanMessage(content="Hello, I'm ready for my interview.")],
@@ -341,7 +382,7 @@ async def start_interview(
         "target_company": body.company,
         "target_role": body.role,
         "current_phase": "intro",
-        "difficulty_level": 3,
+        "difficulty_level": difficulty_level,
         "phase_scores": {},
         "entity_context": entity_context,
         "suggested_topics": suggested_topics,
@@ -650,6 +691,23 @@ def _flush_session_sync(
                 "session_id": session_id,
             }
             
+            # Look up custom metrics for this company+role
+            company_custom_metrics: list[str] = []
+            try:
+                company_profiles = storage.get_company_profiles(state.get("target_company", ""))
+                target_role_lower = state.get("target_role", "").lower()
+                for cp in company_profiles:
+                    if cp.get("role", "").lower() in (target_role_lower, "general"):
+                        raw_cm = cp.get("custom_metrics") or []
+                        if isinstance(raw_cm, str):
+                            import json as _cjson
+                            raw_cm = _cjson.loads(raw_cm)
+                        if raw_cm:
+                            company_custom_metrics = raw_cm
+                            break
+            except Exception:
+                pass
+
             report_data = generate_report(
                 phase_memories=phase_memories,
                 answer_scores=answer_scores,
@@ -658,6 +716,7 @@ def _flush_session_sync(
                 sentiment_data=sentiment_data,
                 session_info=session_info,
                 transcript_text=transcript_text,
+                custom_metrics=company_custom_metrics,
             )
             
             summary = report_data.get("hiring_recommendation", f"Interview complete. {total_q} questions across {len(scores)} phases.")

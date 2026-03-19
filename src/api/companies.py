@@ -22,6 +22,7 @@ async def create_or_update_company(
         description=body.description,
         hiring_patterns=body.hiring_patterns,
         tech_stack=body.tech_stack,
+        custom_metrics=body.custom_metrics,
     )
     profiles = storage.get_company_profiles(body.company_name)
     match = next(

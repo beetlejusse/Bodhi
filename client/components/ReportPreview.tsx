@@ -202,6 +202,25 @@ export default function ReportPreview({ report, onDownloadPDF, downloading }: Re
           </ul>
         </div>
       )}
+
+      {/* Custom Company Metrics */}
+      {report.custom_metric_scores && Object.keys(report.custom_metric_scores).length > 0 && (
+        <div>
+          <h3 className="text-lg font-semibold mb-3">Company-Specific Evaluation</h3>
+          <div className="grid grid-cols-1 gap-3">
+            {Object.entries(report.custom_metric_scores).map(([metric, assessment]) => (
+              <div key={metric} className="rounded-lg border border-purple-800/50 bg-purple-900/20 p-3 flex gap-3">
+                <div className="shrink-0">
+                  <span className="inline-block rounded bg-purple-700/40 px-2 py-0.5 text-xs font-semibold text-purple-300">
+                    {metric}
+                  </span>
+                </div>
+                <p className="text-sm text-zinc-300">{assessment as string}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

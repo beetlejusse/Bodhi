@@ -43,6 +43,7 @@ class CompanyProfileCreate(BaseModel):
     description: str = ""
     hiring_patterns: str = ""
     tech_stack: str = ""
+    custom_metrics: list[str] = []  # e.g. ["GCP Mastery", "System Design Scalability"]
 
 
 class CompanyProfileResponse(BaseModel):
@@ -52,6 +53,7 @@ class CompanyProfileResponse(BaseModel):
     description: str | None
     hiring_patterns: str | None
     tech_stack: str | None
+    custom_metrics: list | None = []
     contributed_by: str | None
     updated_at: datetime
 

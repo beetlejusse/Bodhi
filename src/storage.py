@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS company_profiles (
     description     TEXT,
     hiring_patterns TEXT,
     tech_stack      TEXT,
+    custom_metrics  JSONB DEFAULT '[]',
     contributed_by  TEXT,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(company_name, role)
@@ -196,6 +197,7 @@ class BodhiStorage:
             for stmt in [
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS clerk_user_id TEXT;",
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS report_data JSONB;",
+                "ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS custom_metrics JSONB DEFAULT '[]';",
             ]:
                 try:
                     cur.execute(stmt)
@@ -566,23 +568,25 @@ class BodhiStorage:
         description: str = "",
         hiring_patterns: str = "",
         tech_stack: str = "",
+        custom_metrics: list | None = None,
         contributed_by: str = "",
     ) -> None:
         self._ensure_conn()
         with self.conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO company_profiles "
-                "(company_name, role, description, hiring_patterns, tech_stack, contributed_by, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+                "(company_name, role, description, hiring_patterns, tech_stack, custom_metrics, contributed_by, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT (company_name, role) DO UPDATE SET "
                 "description = EXCLUDED.description, "
                 "hiring_patterns = EXCLUDED.hiring_patterns, "
                 "tech_stack = EXCLUDED.tech_stack, "
+                "custom_metrics = EXCLUDED.custom_metrics, "
                 "contributed_by = EXCLUDED.contributed_by, "
                 "updated_at = EXCLUDED.updated_at",
                 (
                     company_name, role, description, hiring_patterns,
-                    tech_stack, contributed_by, datetime.now(timezone.utc),
+                    tech_stack, json.dumps(custom_metrics or []), contributed_by, datetime.now(timezone.utc),
                 ),
             )
 
