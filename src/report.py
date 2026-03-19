@@ -40,6 +40,7 @@ def generate_report(
     proctoring_violations: list[dict] | None = None,
     sentiment_data: list[dict] | None = None,
     session_info: dict | None = None,
+    transcript_text: str = "",
 ) -> dict:
     """Build a structured performance report from session data.
 
@@ -116,13 +117,27 @@ def generate_report(
     # ── Hiring recommendation ─────────────────────────────────────
     recommendation = _hiring_recommendation(overall_pct, phase_breakdown, proctoring_summary)
 
+    # ── Agentic generation for qualitative fields ──────────────────
+    from src.agents.report_agent import generate_agentic_report_summary
+    agentic_data = generate_agentic_report_summary(
+        transcript_text=transcript_text,
+        sentiment_summary=behavioral_summary,
+        proctoring_summary=proctoring_summary,
+        phase_scores=phase_scores
+    )
+
+    cross_insights = agentic_data.get("cross_section_insights") or cross_insights
+    recommendation = agentic_data.get("hiring_recommendation") or recommendation
+    top_strengths = agentic_data.get("top_strengths") or list(dict.fromkeys(all_strengths))[:5]
+    top_improvements = agentic_data.get("top_improvements") or list(dict.fromkeys(all_weaknesses))[:5]
+
     report = {
         "overall_grade": overall_grade,
         "overall_score_pct": overall_pct,
         "total_questions": total_questions,
         "phase_breakdown": phase_breakdown,
-        "top_strengths": list(dict.fromkeys(all_strengths))[:5],
-        "top_improvements": list(dict.fromkeys(all_weaknesses))[:5],
+        "top_strengths": top_strengths,
+        "top_improvements": top_improvements,
         "cross_section_insights": cross_insights,
         "proctoring_summary": proctoring_summary,
         "behavioral_summary": behavioral_summary,

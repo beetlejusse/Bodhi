@@ -639,8 +639,8 @@ def _flush_session_sync(
         
         # Generate comprehensive report
         try:
-            phase_memories = storage.get_phase_memories(session_id)
-            answer_scores = storage.get_answer_scores(session_id)
+            phase_memories = state.get("phase_memories", {})
+            answer_scores = state.get("answer_scores", [])
             proctoring_violations = storage.get_proctoring_violations(session_id)
             sentiment_data = storage.get_sentiment_data(session_id)
             session_info = {
@@ -657,6 +657,7 @@ def _flush_session_sync(
                 proctoring_violations=proctoring_violations,
                 sentiment_data=sentiment_data,
                 session_info=session_info,
+                transcript_text=transcript_text,
             )
             
             summary = report_data.get("hiring_recommendation", f"Interview complete. {total_q} questions across {len(scores)} phases.")
@@ -894,12 +895,16 @@ async def _sentence_accumulator(token_aiter):
             # All but last part are complete sentences
             for sentence in parts[:-1]:
                 sentence = sentence.strip()
+                if "[END_INTERVIEW]" in sentence:
+                    sentence = sentence.replace("[END_INTERVIEW]", "").strip()
                 if sentence:
                     _stream_log.info("[ACCUMULATOR] Yielding sentence: %s", sentence[:80])
                     yield sentence
             buf = parts[-1]
     # Flush remainder
     buf = buf.strip()
+    if "[END_INTERVIEW]" in buf:
+        buf = buf.replace("[END_INTERVIEW]", "").strip()
     if buf:
         _stream_log.info("[ACCUMULATOR] Yielding final fragment: %s", buf[:80])
         yield buf
@@ -933,14 +938,20 @@ async def _llm_tts_pipeline(graph, graph_config, user_input, sarvam_key: str, sp
                 kind = event.get("event", "")
 
                 if kind == "on_chat_model_stream":
-                    chunk = event.get("data", {}).get("chunk")
-                    if chunk and hasattr(chunk, "content"):
-                        token_text = _extract_text(chunk.content)
-                        if token_text:
-                            collected_text.append(token_text)
-                            if token_callback:
-                                await token_callback(token_text)
-                            yield token_text
+                    node_name = event.get("metadata", {}).get("langgraph_node", "")
+                    if node_name in ("interviewer", ""):
+                        chunk = event.get("data", {}).get("chunk")
+                        if chunk and hasattr(chunk, "content"):
+                            token_text = _extract_text(chunk.content)
+                            if token_text:
+                                collected_text.append(token_text)
+                                if token_callback:
+                                    await token_callback(token_text)
+                                yield token_text
+                                
+                                current_text = "".join(collected_text)
+                                if "[END_INTERVIEW]" in current_text:
+                                    should_end = True
 
                 elif kind == "on_tool_end":
                     output = event.get("data", {}).get("output", "")
@@ -983,6 +994,10 @@ async def _llm_tts_pipeline(graph, graph_config, user_input, sarvam_key: str, sp
         pass
 
     reply_text = "".join(collected_text).strip()
+    if "[END_INTERVIEW]" in reply_text:
+        should_end = True
+        reply_text = reply_text.replace("[END_INTERVIEW]", "").strip()
+
     _stream_log.info("[PIPELINE] Done: %d audio chunks, %d chars reply, phase=%s, end=%s",
                      chunk_count, len(reply_text), phase, should_end)
 

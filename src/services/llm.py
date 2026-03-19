@@ -59,5 +59,5 @@ def _extract_text(content) -> str:
                 parts.append(item["text"])
             elif isinstance(item, str):
                 parts.append(item)
-        return " ".join(parts) if parts else str(content)
+        return " ".join(parts) if parts else ""
     return str(content)

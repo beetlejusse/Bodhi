@@ -43,6 +43,7 @@ interface InterviewSessionViewProps {
   violationCount?: number
   interviewerPersona?: "bodhi" | "riya"
   onEditorContentChange?: (content: string) => void
+  interviewPhase?: string
 }
 
 export function InterviewSessionView({
@@ -56,7 +57,8 @@ export function InterviewSessionView({
   sentimentData,
   violationCount = 0,
   interviewerPersona = "bodhi",
-  onEditorContentChange
+  onEditorContentChange,
+  interviewPhase = "intro"
 }: InterviewSessionViewProps) {
   const [isMicOn, setIsMicOn] = useState(true)
   const [editorContent, setEditorContent] = useState("")
@@ -91,6 +93,9 @@ export function InterviewSessionView({
           </h1>
           <Badge className="text-xs bg-[rgba(55,50,47,0.08)] text-[#37322F] border-[rgba(55,50,47,0.12)] font-medium">
             {getPhaseText()}
+          </Badge>
+          <Badge className="text-xs bg-indigo-100 text-indigo-700 border-indigo-200 font-medium capitalize shadow-sm">
+            {interviewPhase} Phase
           </Badge>
         </div>
 

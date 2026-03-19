@@ -36,6 +36,7 @@ export default function InterviewPage() {
   const router = useRouter()
   const [sessionId, setSessionId] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
+  const [interviewPhase, setInterviewPhase] = useState<string>("intro");
   const [transcript, setTranscript] = useState<Turn[]>([]);
   const [sessionInfo, setSessionInfo] = useState<SessionState | null>(null);
   const [summary, setSummary] = useState<SessionEnd | null>(null);
@@ -187,6 +188,7 @@ export default function InterviewPage() {
       audio.connectWebSocket(sid, {
         onGreetingStart: (text, sessionPhase) => {
            setTranscript([{ speaker: "bodhi", text, phase: isDemoMode ? demoPhase : sessionPhase }])
+           setInterviewPhase(isDemoMode ? demoPhase : sessionPhase)
            refreshSession()
         },
         onGreetingComplete: (sessionPhase) => {
@@ -219,6 +221,7 @@ export default function InterviewPage() {
                return [...newTranscript, { speaker: "bodhi", text, phase: sessionPhase }]
              }
            })
+           setInterviewPhase(sessionPhase)
            if (shouldEnd) {
                setPhase("ended")
                proctoring.endSession()
@@ -379,6 +382,7 @@ export default function InterviewPage() {
         violationCount={proctoring.violations.length}
         interviewerPersona={formData?.interviewer_persona ?? "bodhi"}
         onEditorContentChange={setEditorContent}
+        interviewPhase={interviewPhase}
       />
     </>
   )
