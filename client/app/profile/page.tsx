@@ -105,6 +105,24 @@ export default function ProfilePage() {
   if (!isLoaded || loading) {
     return (
       <div className="min-h-screen bg-[#F7F5F3] font-sans relative overflow-hidden flex items-center justify-center">
+        {/* Animated Grid Background */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, #37322F 1px, transparent 1px),
+                linear-gradient(to bottom, #37322F 1px, transparent 1px)
+              `,
+              backgroundSize: "60px 60px",
+            }}
+          />
+        </div>
+
+        {/* Gradient Orbs */}
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#E8E3DF] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#DED9D5] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" style={{ animationDelay: "2s" }} />
+
         <div className="w-8 h-8 rounded-full border-4 border-[#37322F]/20 border-t-[#37322F] animate-spin" />
       </div>
     )

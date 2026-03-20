@@ -103,7 +103,25 @@ export default function ReportPage() {
   /* ── loading / error states ─────────────────────────────────── */
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F7F5F3]">
+      <div className="min-h-screen bg-[#F7F5F3] relative overflow-hidden">
+        {/* Animated Grid Background */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, #37322F 1px, transparent 1px),
+                linear-gradient(to bottom, #37322F 1px, transparent 1px)
+              `,
+              backgroundSize: "60px 60px",
+            }}
+          />
+        </div>
+
+        {/* Gradient Orbs */}
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#E8E3DF] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#DED9D5] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" style={{ animationDelay: "2s" }} />
+
         <Navbar />
         <div className="flex items-center justify-center pt-40">
           <div className="text-center space-y-4 animate-pulse">
@@ -117,7 +135,25 @@ export default function ReportPage() {
 
   if (error || !report) {
     return (
-      <div className="min-h-screen bg-[#F7F5F3]">
+      <div className="min-h-screen bg-[#F7F5F3] relative overflow-hidden">
+        {/* Animated Grid Background */}
+        <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `
+                linear-gradient(to right, #37322F 1px, transparent 1px),
+                linear-gradient(to bottom, #37322F 1px, transparent 1px)
+              `,
+              backgroundSize: "60px 60px",
+            }}
+          />
+        </div>
+
+        {/* Gradient Orbs */}
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#E8E3DF] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" />
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#DED9D5] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" style={{ animationDelay: "2s" }} />
+
         <Navbar />
         <div className="flex items-center justify-center pt-40">
           <div className="text-center space-y-4 max-w-md">
@@ -140,7 +176,25 @@ export default function ReportPage() {
   const proctor = report.proctoring_summary
 
   return (
-    <div className="min-h-screen bg-[#F7F5F3]">
+    <div className="min-h-screen bg-[#F7F5F3] relative overflow-hidden">
+      {/* Animated Grid Background */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, #37322F 1px, transparent 1px),
+              linear-gradient(to bottom, #37322F 1px, transparent 1px)
+            `,
+            backgroundSize: "60px 60px",
+          }}
+        />
+      </div>
+
+      {/* Gradient Orbs */}
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#E8E3DF] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" />
+      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#DED9D5] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" style={{ animationDelay: "2s" }} />
+
       <Navbar />
 
       <div className="mx-auto max-w-5xl px-4 pt-24 pb-16 space-y-8 animate-fade-in-up">

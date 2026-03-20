@@ -97,7 +97,25 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="w-full min-h-screen relative bg-gradient-to-br from-[#F7F5F3] via-[#F7F5F3] to-[#F0EBE6] overflow-x-hidden flex flex-col justify-start items-center">
+    <div className="w-full min-h-screen relative bg-[#F7F5F3] overflow-x-hidden flex flex-col justify-start items-center">
+      {/* Animated Grid Background */}
+      <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, #37322F 1px, transparent 1px),
+              linear-gradient(to bottom, #37322F 1px, transparent 1px)
+            `,
+            backgroundSize: "60px 60px",
+          }}
+        />
+      </div>
+
+      {/* Gradient Orbs */}
+      <div className="absolute top-0 left-1/4 w-96 h-96 bg-[#E8E3DF] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" />
+      <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-[#DED9D5] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-float" style={{ animationDelay: "2s" }} />
+
       <div className="relative flex flex-col justify-start items-center w-full">
         {/* Main container with proper margins */}
         <div className="w-full max-w-none px-4 sm:px-6 md:px-8 lg:px-0 lg:max-w-[1060px] lg:w-[1060px] relative flex flex-col justify-start items-start min-h-screen">
