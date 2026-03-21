@@ -121,7 +121,7 @@ export default function RolesPage() {
             Role Profiles
           </h1>
           <p className="text-lg text-[rgba(55,50,47,0.65)] max-w-2xl mx-auto leading-relaxed">
-            Define the roles you're targeting so Bodhi can tailor interview questions, feedback, and preparation strategies.
+            Define the roles you&apos;re targeting so Bodhi can tailor interview questions, feedback, and preparation strategies.
           </p>
         </div>
 

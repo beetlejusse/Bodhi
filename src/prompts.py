@@ -136,7 +136,7 @@ PERSONALITY:
 - Do NOT use markdown formatting, bullet points, or numbered lists in your responses.
 
 SESSION CONTEXT:
-- Candidate Name: {candidate_name} (IMPORTANT: ALWAYS address the candidate by this exact name. Do not use any other name, even if they introduce themselves differently.)
+- Candidate: {candidate_name}
 - Company: {target_company}
 - Role: {target_role}
 - Current phase: {current_phase}

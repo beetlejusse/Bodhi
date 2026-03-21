@@ -26,6 +26,7 @@ export default function CompaniesPage() {
   const [form, setForm] = useState({
     company_name: "",
     role: "general",
+    experience_level: "Mid-Level",
     description: "",
     hiring_patterns: "",
     tech_stack: "",
@@ -52,6 +53,7 @@ export default function CompaniesPage() {
       setForm({
         company_name: "",
         role: "general",
+        experience_level: "Mid-Level",
         description: "",
         hiring_patterns: "",
         tech_stack: "",
@@ -68,11 +70,12 @@ export default function CompaniesPage() {
 
   const handleDelete = async (company: CompanyProfile) => {
     try {
-      await deleteCompany(company.company_name, company.role)
+      await deleteCompany(company.company_name, company.role, company.experience_level)
       if (
         selectedCompany &&
         selectedCompany.company_name === company.company_name &&
-        selectedCompany.role === company.role
+        selectedCompany.role === company.role &&
+        selectedCompany.experience_level === company.experience_level
       ) {
         setSelectedCompany(null)
       }
@@ -177,7 +180,7 @@ export default function CompaniesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredCompanies.map((company, index) => (
                 <div
-                  key={`${company.company_name}-${company.role}`}
+                  key={`${company.company_name}-${company.role}-${company.experience_level}`}
                   className="group relative bg-white/70 backdrop-blur-sm rounded-2xl border-2 border-[rgba(55,50,47,0.08)] p-7 hover:border-[rgba(55,50,47,0.15)] transition-all duration-300 hover:shadow-[0px_8px_32px_rgba(55,50,47,0.12)] hover:-translate-y-1 cursor-pointer animate-fade-in-up"
                   style={{ animationDelay: `${0.3 + index * 0.05}s` }}
                   onClick={() => handleSelectCompany(company)}
@@ -194,12 +197,19 @@ export default function CompaniesPage() {
                     {company.company_name}
                   </h3>
 
-                  {/* Role */}
-                  <div className="flex items-center gap-2 mb-4">
-                    <Briefcase className="w-4 h-4 text-[rgba(55,50,47,0.4)]" />
-                    <span className="text-sm text-[rgba(55,50,47,0.65)] font-medium">
-                      {company.role}
-                    </span>
+                  {/* Role and Experience */}
+                  <div className="flex flex-col gap-1 mb-4">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="w-4 h-4 text-[rgba(55,50,47,0.4)]" />
+                      <span className="text-sm text-[rgba(55,50,47,0.65)] font-medium">
+                        {company.role}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs px-2 py-0.5 rounded bg-[rgba(55,50,47,0.06)] text-[rgba(55,50,47,0.65)] font-medium">
+                        {company.experience_level}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Tech Stack */}
@@ -265,7 +275,8 @@ export default function CompaniesPage() {
                   index={companies.findIndex(
                     (c) =>
                       c.company_name === selectedCompany.company_name &&
-                      c.role === selectedCompany.role
+                      c.role === selectedCompany.role &&
+                      c.experience_level === selectedCompany.experience_level
                   )}
                   onDelete={handleDelete}
                   onClose={handleCloseDetail}
@@ -354,6 +365,24 @@ export default function CompaniesPage() {
                       onChange={(e) => setForm({ ...form, role: e.target.value })}
                       className="w-full px-4 py-3.5 rounded-xl border-2 border-[rgba(55,50,47,0.12)] bg-white text-[#2F3037] placeholder:text-[rgba(55,50,47,0.35)] focus:outline-none focus:ring-4 focus:ring-[#37322F]/10 focus:border-[#37322F] transition-all font-sans text-[15px]"
                     />
+                  </div>
+
+                  {/* Experience Level */}
+                  <div className="space-y-2.5">
+                    <label className="block text-sm font-semibold text-[#37322F] font-sans">
+                      Experience Level <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={form.experience_level}
+                      onChange={(e) => setForm({ ...form, experience_level: e.target.value })}
+                      className="w-full px-4 py-3.5 rounded-xl border-2 border-[rgba(55,50,47,0.12)] bg-white text-[#2F3037] focus:outline-none focus:ring-4 focus:ring-[#37322F]/10 focus:border-[#37322F] transition-all font-sans text-[15px]"
+                    >
+                      <option value="Intern">Intern</option>
+                      <option value="Junior">Junior</option>
+                      <option value="Mid-Level">Mid-Level</option>
+                      <option value="Senior">Senior</option>
+                    </select>
                   </div>
 
                   {/* Two Column Layout for Description and Hiring Patterns */}

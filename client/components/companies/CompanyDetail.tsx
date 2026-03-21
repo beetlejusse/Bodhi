@@ -38,10 +38,13 @@ export function CompanyDetail({ company, index, onDelete, onClose }: CompanyDeta
                 </Badge>
               )}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Briefcase className="w-4 h-4 text-[rgba(55,50,47,0.4)]" />
               <span className="text-base text-[rgba(55,50,47,0.7)] font-medium">
                 {company.role}
+              </span>
+              <span className="text-sm px-2.5 py-1 rounded bg-[rgba(55,50,47,0.06)] text-[rgba(55,50,47,0.65)] font-medium md:ml-2">
+                {company.experience_level}
               </span>
             </div>
           </div>

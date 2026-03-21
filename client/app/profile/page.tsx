@@ -27,6 +27,10 @@ export default function ProfilePage() {
   const [editingName, setEditingName] = useState(false)
   const [newName, setNewName] = useState("")
   const [updatingName, setUpdatingName] = useState(false)
+  
+  const [editingExperience, setEditingExperience] = useState(false)
+  const [newExperience, setNewExperience] = useState("")
+  const [updatingExperience, setUpdatingExperience] = useState(false)
 
   useEffect(() => {
     if (isLoaded && !isSignedIn) {
@@ -138,6 +142,41 @@ export default function ProfilePage() {
       setError(err instanceof Error ? err.message : "Failed to update name. Please try again.")
     } finally {
       setUpdatingName(false)
+    }
+  }
+
+  const handleUpdateExperience = async () => {
+    if (!newExperience.trim()) {
+      setError("Experience level cannot be empty")
+      return
+    }
+
+    try {
+      setUpdatingExperience(true)
+      setError("")
+      
+      const token = await getToken()
+      const headers = new Headers()
+      headers.append("Authorization", `Bearer ${token}`)
+      headers.append("Content-Type", "application/json")
+      
+      const response = await fetch("/api/users/me/experience", {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ experience_level: newExperience.trim() }),
+      })
+      
+      if (!response.ok) {
+        throw new Error("Failed to update experience level")
+      }
+      
+      await loadProfile()
+      setEditingExperience(false)
+    } catch (err) {
+      console.error("Experience update error:", err)
+      setError(err instanceof Error ? err.message : "Failed to update experience. Please try again.")
+    } finally {
+      setUpdatingExperience(false)
     }
   }
 
@@ -257,6 +296,47 @@ export default function ProfilePage() {
                 <p className="text-[#37322F]/60 font-medium mt-1">
                   {user?.emailAddresses[0]?.emailAddress}
                 </p>
+                
+                <div className="mt-4">
+                  {editingExperience ? (
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <select
+                        value={newExperience}
+                        onChange={(e) => setNewExperience(e.target.value)}
+                        className="px-4 py-2 rounded-xl border border-[rgba(55,50,47,0.15)] bg-white text-[#2F3037] text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[rgba(55,50,47,0.15)]"
+                      >
+                        <option value="">Select Experience Level</option>
+                        <option value="Intern">Intern</option>
+                        <option value="Junior">Junior</option>
+                        <option value="Mid-Level">Mid-Level</option>
+                        <option value="Senior">Senior</option>
+                      </select>
+                      <div className="flex gap-2">
+                        <button onClick={handleUpdateExperience} disabled={updatingExperience} className="px-4 py-1.5 rounded-full bg-[#37322F] text-white text-xs font-semibold hover:bg-[#2a2520] transition-colors disabled:opacity-50">
+                          {updatingExperience ? "Saving..." : "Save"}
+                        </button>
+                        <button onClick={() => { setEditingExperience(false); setNewExperience(""); }} className="px-4 py-1.5 rounded-full border border-[rgba(55,50,47,0.12)] bg-white text-[#37322F] text-xs font-semibold hover:bg-[rgba(55,50,47,0.02)] transition-colors">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#37322F] font-semibold text-sm bg-white/80 border border-[rgba(55,50,47,0.1)] px-3 py-1 rounded-full shadow-sm">
+                        {profile?.experience_level || "No Experience Set"}
+                      </span>
+                      <button
+                        onClick={() => {
+                          setNewExperience(profile?.experience_level || "")
+                          setEditingExperience(true)
+                        }}
+                        className="text-xs font-semibold text-[#37322F]/60 hover:text-[#37322F] underline underline-offset-2 transition-colors ml-2"
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  )}
+                </div>
               </>
             )}
           </div>
@@ -339,24 +419,15 @@ export default function ProfilePage() {
           ) : (
              profile?.resume_data && (
               <div className="rounded-2xl border border-[rgba(55,50,47,0.08)] bg-white/60 backdrop-blur-md p-7 shadow-sm space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  {profile.resume_data.primary_domain && (
-                    <Field label="Domain" value={profile.resume_data.primary_domain} />
-                  )}
-                  {profile.resume_data.seniority_level && (
-                    <Field label="Experience Level" value={profile.resume_data.seniority_level.charAt(0).toUpperCase() + profile.resume_data.seniority_level.slice(1)} />
-                  )}
-                </div>
-
-                {profile.resume_data.professional_summary && (
-                  <Field label="Professional Summary" value={profile.resume_data.professional_summary} paragraph />
+                {profile.resume_data.summary && (
+                  <Field label="Professional Summary" value={profile.resume_data.summary} paragraph />
                 )}
                 
-                {profile.resume_data.technical_skills && profile.resume_data.technical_skills.length > 0 && (
+                {profile.resume_data.skills && profile.resume_data.skills.length > 0 && (
                   <div>
                     <FieldLabel>Technical Skills</FieldLabel>
                     <div className="flex flex-wrap gap-2 mt-2">
-                      {profile.resume_data.technical_skills.map((skill, i) => (
+                      {profile.resume_data.skills.map((skill: string, i: number) => (
                         <span key={i} className="rounded-full bg-[rgba(55,50,47,0.06)] px-3 py-1 text-xs text-[#37322F] font-semibold border border-[rgba(55,50,47,0.05)]">
                           {skill}
                         </span>
@@ -365,14 +436,14 @@ export default function ProfilePage() {
                   </div>
                 )}
 
-                {profile.resume_data.key_achievements && profile.resume_data.key_achievements.length > 0 && (
+                {profile.resume_data.projects && profile.resume_data.projects.length > 0 && (
                   <div>
                     <FieldLabel>Projects & Achievements</FieldLabel>
                     <ul className="mt-2 space-y-2">
-                      {profile.resume_data.key_achievements.map((achievement, i) => (
+                      {profile.resume_data.projects.map((project: { name: string, description: string }, i: number) => (
                         <li key={i} className="text-[13px] text-[rgba(55,50,47,0.8)] leading-relaxed flex gap-2">
                           <span className="text-[#37322F]/40 shadow-sm">•</span>
-                          {achievement}
+                          <strong>{project.name}:</strong> {project.description}
                         </li>
                       ))}
                     </ul>
@@ -389,7 +460,7 @@ export default function ProfilePage() {
           
           {!profile?.interview_history || profile.interview_history.length === 0 ? (
             <div className="rounded-2xl border border-[rgba(55,50,47,0.08)] bg-white/60 backdrop-blur-md p-8 text-center text-[rgba(55,50,47,0.6)] font-medium">
-              You haven't completed any interviews yet.
+              You haven&apos;t completed any interviews yet.
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
