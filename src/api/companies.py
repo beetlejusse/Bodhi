@@ -19,6 +19,7 @@ async def create_or_update_company(
     storage.upsert_company_profile(
         company_name=body.company_name,
         role=body.role,
+        experience_level=body.experience_level,
         description=body.description,
         hiring_patterns=body.hiring_patterns,
         tech_stack=body.tech_stack,
@@ -26,7 +27,7 @@ async def create_or_update_company(
     )
     profiles = storage.get_company_profiles(body.company_name)
     match = next(
-        (p for p in profiles if p["role"].lower() == body.role.lower()), None
+        (p for p in profiles if p["role"].lower() == body.role.lower() and p.get("experience_level") == body.experience_level), None
     )
     if not match:
         raise HTTPException(500, "Profile created but could not be retrieved")
@@ -49,12 +50,13 @@ async def get_company(
     return profiles
 
 
-@router.delete("/{company_name}/{role}", status_code=204)
+@router.delete("/{company_name}/{role}/{experience_level}", status_code=204)
 async def delete_company_profile(
     company_name: str,
     role: str,
+    experience_level: str,
     storage: BodhiStorage = Depends(get_storage),
 ):
-    deleted = storage.delete_company_profile(company_name, role)
+    deleted = storage.delete_company_profile(company_name, role, experience_level)
     if not deleted:
-        raise HTTPException(404, f"Profile '{company_name}/{role}' not found")
+        raise HTTPException(404, f"Profile '{company_name}/{role}/{experience_level}' not found")

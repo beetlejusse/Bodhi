@@ -6,9 +6,10 @@ import base64
 import os
 import uuid
 import urllib.parse
+import asyncio
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Form
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, Form, BackgroundTasks
 from fastapi.responses import StreamingResponse
 
 from langchain_core.messages import HumanMessage
@@ -138,15 +139,16 @@ def _load_suggested_topics(company: str, role: str, cache) -> str:
     return "\n".join(f"  - {t}" for t in topics)
 
 
-def _seniority_to_difficulty(candidate_profile: dict) -> int:
-    """Derive an initial interview difficulty from the candidate's parsed resume profile.
+def _seniority_to_difficulty(candidate_profile: dict, explicit_level: str = "") -> int:
+    """Derive an initial interview difficulty from explicit level or parsed resume profile."""
+    level = (explicit_level or "").lower()
+    if "fresher" in level or "intern" in level or "junior" in level:
+        return 2
+    if "senior" in level or "2+" in level:
+        return 4
+    if "mid" in level or "1-2" in level:
+        return 3
 
-    Mapping:
-      intern / junior / 0-2 yrs  → 2  (fundamentals focused)
-      mid / 2-6 yrs              → 3  (balanced depth)
-      senior / 7-9 yrs           → 4  (system design & trade-offs)
-      staff / principal / 10+    → 5  (architecture & leadership)
-    """
     seniority = (candidate_profile.get("seniority_level") or "").lower()
     years = candidate_profile.get("years_of_experience") or 0
     try:
@@ -160,22 +162,18 @@ def _seniority_to_difficulty(candidate_profile: dict) -> int:
         "senior": 4,
         "staff": 5, "principal": 5, "executive": 5,
     }
-    # Use explicit seniority_level first
     if seniority in level_map:
         return level_map[seniority]
-    # Fall back to years_of_experience
-    if years < 2:
-        return 2
-    if years < 7:
-        return 3
-    if years < 10:
-        return 4
+    if years < 2: return 2
+    if years < 7: return 3
+    if years < 10: return 4
     return 5
 
 
 _CURRICULUM_PROMPT = """\
 You are an expert technical interviewer preparing a custom interview curriculum.
 Generate exactly 2 targeted questions for each of the following 2 phases for a {role} at {company}.
+The candidate's experience level is: {experience_level}. Tailor the difficulty, expectations, and nature of the questions accordingly.
 Use the provided company profile and job description to make the questions highly specific and realistic.
 
 COMPANY PROFILE:
@@ -191,7 +189,7 @@ Each key must contain a list of exactly 2 question strings.
 DO NOT include any markdown blocks (like ```json), just raw JSON.
 """
 
-def generate_interview_curriculum(company: str, role: str, storage: BodhiStorage, jd_text: str = "") -> dict:
+def generate_interview_curriculum(company: str, role: str, experience_level: str, storage: BodhiStorage, jd_text: str = "") -> dict:
     """Generate 2 technical + 2 DSA pre-decided questions based on company profile and JD."""
     from src.services.llm import create_llm, _extract_text
     from langchain_core.messages import HumanMessage
@@ -229,7 +227,7 @@ def generate_interview_curriculum(company: str, role: str, storage: BodhiStorage
     
     llm = create_llm(api_key=os.getenv("GOOGLE_API_KEY", ""))
     prompt = _CURRICULUM_PROMPT.format(
-        role=role, company=company, profile_text=profile_text, jd_block=jd_block
+        role=role, company=company, experience_level=experience_level, profile_text=profile_text, jd_block=jd_block
     )
     
     try:
@@ -282,10 +280,16 @@ async def prepare_interview(
     entity_context = _load_entity_context(body.company, body.role, cache, storage)
     suggested_topics = _load_suggested_topics(body.company, body.role, cache)
     
+    experience_level_used = body.experience_level
+    if body.mode != "standard" and resolved_user_profile_id and storage:
+        db_exp = storage.get_user_experience_level(user_id)
+        if db_exp:
+            experience_level_used = db_exp
+
     # Pre-generate curriculum (2 technical + 2 DSA questions) unless in resume-based mode
     curriculum = {}
     if body.mode != "option_a":
-        curriculum = generate_interview_curriculum(body.company, body.role, storage, jd_text=body.jd_text)
+        curriculum = generate_interview_curriculum(body.company, body.role, experience_level_used, storage, jd_text=body.jd_text)
         if cache:
             for phase, questions in curriculum.items():
                 cache.set_question_queue(session_id, phase, questions)
@@ -303,7 +307,7 @@ async def prepare_interview(
         pass
 
     # Determine initial difficulty from candidate seniority
-    difficulty_level = _seniority_to_difficulty(candidate_profile) if candidate_profile else 3
+    difficulty_level = _seniority_to_difficulty(candidate_profile, explicit_level=experience_level_used) if candidate_profile or experience_level_used else 3
 
     initial_state_data = {
         "session_id": session_id,
@@ -361,10 +365,16 @@ async def start_interview(
     entity_context = _load_entity_context(body.company, body.role, cache, storage)
     suggested_topics = _load_suggested_topics(body.company, body.role, cache)
     
+    experience_level_used = body.experience_level
+    if body.mode != "standard" and resolved_user_profile_id and storage:
+        db_exp = storage.get_user_experience_level(user_id)
+        if db_exp:
+            experience_level_used = db_exp
+
     # Pre-generate curriculum (2 technical + 2 DSA questions) unless in resume-based mode
     curriculum = {}
     if body.mode != "option_a":
-        curriculum = generate_interview_curriculum(body.company, body.role, storage, jd_text=body.jd_text)
+        curriculum = generate_interview_curriculum(body.company, body.role, experience_level_used, storage, jd_text=body.jd_text)
         if cache:
             for phase, questions in curriculum.items():
                 cache.set_question_queue(session_id, phase, questions)
@@ -382,7 +392,7 @@ async def start_interview(
         pass
 
     # Determine initial difficulty from candidate seniority
-    difficulty_level = _seniority_to_difficulty(candidate_profile) if candidate_profile else 3
+    difficulty_level = _seniority_to_difficulty(candidate_profile, explicit_level=experience_level_used) if candidate_profile or experience_level_used else 3
 
     graph_config = {"configurable": {"thread_id": session_id}}
     initial_state = {
@@ -609,6 +619,7 @@ async def get_session(
 @router.post("/{session_id}/end", response_model=SessionEndResponse)
 async def end_interview(
     session_id: str,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(require_auth),
     graph=Depends(get_graph),
     storage: BodhiStorage = Depends(get_storage),
@@ -625,12 +636,13 @@ async def end_interview(
         raise HTTPException(404, f"Session '{session_id}' not found")
 
     vals = state.values
-    summary, overall_score = _flush_session_sync(session_id, vals, storage, cache)
+    # Schedule the synchronous flushing (and report generation) to run in the background
+    background_tasks.add_task(_flush_session_sync, session_id, vals, storage, cache)
 
     return SessionEndResponse(
         session_id=session_id,
-        summary=summary,
-        overall_score=overall_score,
+        summary="Report generation in progress...",
+        overall_score=None,
     )
 
 
@@ -675,14 +687,6 @@ def _flush_session_sync(
         for phase, data in scores.items():
             q = data.get("questions", 0)
             s = data.get("total_score", 0)
-            storage.save_phase_result(
-                session_id,
-                phase,
-                score=s / q if q else 0,
-                question_count=q,
-                difficulty_reached=state.get("difficulty_level", 3),
-                feedback=data.get("feedback", []),
-            )
             total_score += s
             total_q += q
 

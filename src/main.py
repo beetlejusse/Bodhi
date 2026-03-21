@@ -113,14 +113,6 @@ def _flush_session(session_id, state, storage, cache):
             for phase, data in scores.items():
                 q = data.get("questions", 0)
                 s = data.get("total_score", 0)
-                storage.save_phase_result(
-                    session_id,
-                    phase,
-                    score=s / q if q else 0,
-                    question_count=q,
-                    difficulty_reached=state.get("difficulty_level", 3),
-                    feedback=data.get("feedback", []),
-                )
                 overall += s
                 total_q += q
 

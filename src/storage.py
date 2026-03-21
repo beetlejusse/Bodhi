@@ -38,16 +38,6 @@ CREATE TABLE IF NOT EXISTS transcripts (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS phase_results (
-    id                 SERIAL PRIMARY KEY,
-    session_id         TEXT NOT NULL REFERENCES sessions(id),
-    phase              TEXT NOT NULL,
-    score              REAL,
-    question_count     INT,
-    difficulty_reached INT,
-    feedback_json      TEXT
-);
-
 CREATE TABLE IF NOT EXISTS entities (
     id               SERIAL PRIMARY KEY,
     company_name     TEXT NOT NULL UNIQUE,
@@ -62,13 +52,14 @@ CREATE TABLE IF NOT EXISTS company_profiles (
     id              SERIAL PRIMARY KEY,
     company_name    TEXT NOT NULL,
     role            TEXT NOT NULL,
+    experience_level TEXT NOT NULL DEFAULT 'Mid-Level',
     description     TEXT,
     hiring_patterns TEXT,
     tech_stack      TEXT,
     custom_metrics  JSONB DEFAULT '[]',
     contributed_by  TEXT,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(company_name, role)
+    UNIQUE(company_name, role, experience_level)
 );
 
 CREATE TABLE IF NOT EXISTS company_documents (
@@ -91,31 +82,6 @@ CREATE TABLE IF NOT EXISTS role_profiles (
     typical_topics  TEXT DEFAULT '',
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS phase_memories (
-    id          SERIAL PRIMARY KEY,
-    session_id  TEXT NOT NULL REFERENCES sessions(id),
-    phase       TEXT NOT NULL,
-    summary     JSONB NOT NULL,
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    UNIQUE(session_id, phase)
-);
-
-CREATE TABLE IF NOT EXISTS answer_scores (
-    id            SERIAL PRIMARY KEY,
-    session_id    TEXT NOT NULL REFERENCES sessions(id),
-    phase         TEXT NOT NULL,
-    question_num  INT NOT NULL,
-    accuracy      INT,
-    depth         INT,
-    communication INT,
-    confidence    INT,
-    composite     REAL,
-    feedback      TEXT,
-    probed        BOOLEAN DEFAULT FALSE,
-    probe_reason  TEXT DEFAULT '',
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS proctoring_violations (
@@ -143,12 +109,9 @@ CREATE TABLE IF NOT EXISTS sentiment_data (
 );
 
 CREATE INDEX IF NOT EXISTS idx_transcripts_session ON transcripts(session_id);
-CREATE INDEX IF NOT EXISTS idx_phase_results_session ON phase_results(session_id);
 CREATE INDEX IF NOT EXISTS idx_entities_company ON entities(company_name);
 CREATE INDEX IF NOT EXISTS idx_company_docs_lookup ON company_documents(company_name, role);
 CREATE INDEX IF NOT EXISTS idx_role_profiles_name ON role_profiles(role_name);
-CREATE INDEX IF NOT EXISTS idx_phase_memories_session ON phase_memories(session_id);
-CREATE INDEX IF NOT EXISTS idx_answer_scores_session ON answer_scores(session_id);
 CREATE INDEX IF NOT EXISTS idx_proctoring_violations_session ON proctoring_violations(session_id);
 CREATE INDEX IF NOT EXISTS idx_sentiment_data_session ON sentiment_data(session_id);
 """
@@ -198,11 +161,49 @@ class BodhiStorage:
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS clerk_user_id TEXT;",
                 "ALTER TABLE sessions ADD COLUMN IF NOT EXISTS report_data JSONB;",
                 "ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS custom_metrics JSONB DEFAULT '[]';",
+                "ALTER TABLE company_profiles ADD COLUMN IF NOT EXISTS experience_level TEXT NOT NULL DEFAULT 'Mid-Level';",
+                "ALTER TABLE company_profiles DROP CONSTRAINT IF EXISTS company_profiles_company_name_role_key;",
+                "ALTER TABLE company_profiles DROP CONSTRAINT IF EXISTS company_profiles_company_name_role_experience_level_key;",
+                "ALTER TABLE company_profiles ADD CONSTRAINT company_profiles_company_name_role_exp_key UNIQUE(company_name, role, experience_level);",
             ]:
                 try:
                     cur.execute(stmt)
                 except Exception:
                     pass
+
+            # Drop unused legacy tables
+            for tbl in [
+                "xp_log", "weekly_challenges", "user_stats", "answer_scores",
+                "phase_memories", "user_badges", "phase_results"
+            ]:
+                try:
+                    cur.execute(f"DROP TABLE IF EXISTS {tbl} CASCADE;")
+                except Exception:
+                    pass
+
+            # Migrate old experience_level values to clean labels
+            for old_val, new_val in [
+                ("Mid-Level / 1-2 years", "Mid-Level"),
+                ("Fresher / Internship", "Intern"),
+                ("Senior / 2+ years", "Senior"),
+            ]:
+                try:
+                    cur.execute(
+                        "UPDATE company_profiles SET experience_level = %s WHERE experience_level = %s",
+                        (new_val, old_val),
+                    )
+                    cur.execute(
+                        "UPDATE user_profiles SET experience_level = %s WHERE experience_level = %s",
+                        (new_val, old_val),
+                    )
+                except Exception:
+                    pass
+
+            # Update default on company_profiles column
+            try:
+                cur.execute("ALTER TABLE company_profiles ALTER COLUMN experience_level SET DEFAULT 'Mid-Level';")
+            except Exception:
+                pass
 
             # user_profiles table (separate execute for clear error visibility)
             try:
@@ -235,6 +236,7 @@ class BodhiStorage:
                 cur.execute("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS resume_file_content BYTEA;")
                 cur.execute("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS resume_file_name TEXT;")
                 cur.execute("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS full_name TEXT;")
+                cur.execute("ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS experience_level TEXT;")
             except Exception:
                 pass
 
@@ -373,104 +375,7 @@ class BodhiStorage:
                 rows,
             )
 
-    # ── Phase results ─────────────────────────────────────────────────────────
 
-    def save_phase_result(
-        self,
-        session_id: str,
-        phase: str,
-        score: float | None = None,
-        question_count: int = 0,
-        difficulty_reached: int = 3,
-        feedback: list[str] | None = None,
-    ) -> None:
-        self._ensure_conn()
-        with self.conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO phase_results "
-                "(session_id, phase, score, question_count, difficulty_reached, feedback_json) "
-                "VALUES (%s, %s, %s, %s, %s, %s)",
-                (
-                    session_id,
-                    phase,
-                    score,
-                    question_count,
-                    difficulty_reached,
-                    json.dumps(feedback or []),
-                ),
-            )
-
-    # ── Phase memories (compacted context) ───────────────────────────────────
-
-    def save_phase_memory(
-        self,
-        session_id: str,
-        phase: str,
-        memory: dict,
-    ) -> None:
-        """Persist a compacted phase memory summary."""
-        self._ensure_conn()
-        with self.conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO phase_memories (session_id, phase, summary) "
-                "VALUES (%s, %s, %s) "
-                "ON CONFLICT (session_id, phase) DO UPDATE SET summary = EXCLUDED.summary",
-                (session_id, phase, json.dumps(memory)),
-            )
-
-    def get_phase_memories(self, session_id: str) -> dict:
-        """Load all phase memories for a session from Neon."""
-        self._ensure_conn()
-        with self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT phase, summary FROM phase_memories WHERE session_id = %s",
-                (session_id,),
-            )
-            result = {}
-            for row in cur.fetchall():
-                summary = row["summary"]
-                if isinstance(summary, str):
-                    summary = json.loads(summary)
-                result[row["phase"]] = summary
-            return result
-
-    # ── Answer scores (granular per-question scores) ──────────────────────────
-
-    def save_answer_score(
-        self,
-        session_id: str,
-        phase: str,
-        question_num: int,
-        accuracy: int,
-        depth: int,
-        communication: int,
-        confidence: int,
-        composite: float,
-        feedback: str = "",
-        probed: bool = False,
-        probe_reason: str = "",
-    ) -> None:
-        """Persist a single answer score."""
-        self._ensure_conn()
-        with self.conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO answer_scores "
-                "(session_id, phase, question_num, accuracy, depth, communication, "
-                "confidence, composite, feedback, probed, probe_reason) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (session_id, phase, question_num, accuracy, depth,
-                 communication, confidence, composite, feedback, probed, probe_reason),
-            )
-
-    def get_answer_scores(self, session_id: str) -> list[dict]:
-        """Retrieve all answer scores for a session."""
-        self._ensure_conn()
-        with self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                "SELECT * FROM answer_scores WHERE session_id = %s ORDER BY phase, question_num",
-                (session_id,),
-            )
-            return [dict(r) for r in cur.fetchall()]
 
     # ── Proctoring violations ─────────────────────────────────────────────────
 
@@ -586,6 +491,7 @@ class BodhiStorage:
         self,
         company_name: str,
         role: str,
+        experience_level: str = "Mid-Level",
         description: str = "",
         hiring_patterns: str = "",
         tech_stack: str = "",
@@ -596,9 +502,9 @@ class BodhiStorage:
         with self.conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO company_profiles "
-                "(company_name, role, description, hiring_patterns, tech_stack, custom_metrics, contributed_by, updated_at) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
-                "ON CONFLICT (company_name, role) DO UPDATE SET "
+                "(company_name, role, experience_level, description, hiring_patterns, tech_stack, custom_metrics, contributed_by, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+                "ON CONFLICT (company_name, role, experience_level) DO UPDATE SET "
                 "description = EXCLUDED.description, "
                 "hiring_patterns = EXCLUDED.hiring_patterns, "
                 "tech_stack = EXCLUDED.tech_stack, "
@@ -606,7 +512,7 @@ class BodhiStorage:
                 "contributed_by = EXCLUDED.contributed_by, "
                 "updated_at = EXCLUDED.updated_at",
                 (
-                    company_name, role, description, hiring_patterns,
+                    company_name, role, experience_level, description, hiring_patterns,
                     tech_stack, json.dumps(custom_metrics or []), contributed_by, datetime.now(timezone.utc),
                 ),
             )
@@ -742,15 +648,36 @@ class BodhiStorage:
             )
             return [dict(row) for row in cur.fetchall()]
 
-    def delete_company_profile(self, company_name: str, role: str) -> bool:
+    def delete_company_profile(self, company_name: str, role: str, experience_level: str) -> bool:
         self._ensure_conn()
         with self.conn.cursor() as cur:
             cur.execute(
                 "DELETE FROM company_profiles "
-                "WHERE LOWER(company_name) = LOWER(%s) AND LOWER(role) = LOWER(%s)",
-                (company_name, role),
+                "WHERE LOWER(company_name) = LOWER(%s) AND LOWER(role) = LOWER(%s) AND experience_level = %s",
+                (company_name, role, experience_level),
             )
             return cur.rowcount > 0
+
+    def update_user_experience_level(self, clerk_user_id: str, new_level: str) -> bool:
+        """Update explicit experience level on a user profile."""
+        if not clerk_user_id:
+            return False
+        self._ensure_conn()
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE user_profiles SET experience_level = %s WHERE clerk_user_id = %s",
+                (new_level, clerk_user_id),
+            )
+            return cur.rowcount > 0
+
+    def get_user_experience_level(self, clerk_user_id: str) -> str | None:
+        if not clerk_user_id:
+            return None
+        self._ensure_conn()
+        with self.conn.cursor() as cur:
+            cur.execute("SELECT experience_level FROM user_profiles WHERE clerk_user_id = %s", (clerk_user_id,))
+            row = cur.fetchone()
+            return row[0] if row else None
 
     # ── User profiles (resume-based) ──────────────────────────────────────────
 

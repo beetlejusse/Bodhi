@@ -148,22 +148,6 @@ def build_cross_section_context(phase_memories: dict) -> str:
     return context
 
 
-def flush_memories_to_neon(
-    session_id: str,
-    phase_memories: dict,
-    storage: Any,
-) -> None:
-    """Persist all compacted phase memories to NeonDB."""
-    for phase, mem in phase_memories.items():
-        if not isinstance(mem, dict):
-            continue
-        try:
-            storage.save_phase_memory(session_id, phase, mem)
-            log.info("[MEMORY] Flushed phase '%s' memory to Neon for session %s",
-                     phase, session_id)
-        except Exception as e:
-            log.error("[MEMORY] Failed to flush phase '%s' to Neon: %s", phase, e)
-
 
 def _empty_memory(phase: str) -> dict:
     return {

@@ -40,6 +40,7 @@ class RoleResponse(BaseModel):
 class CompanyProfileCreate(BaseModel):
     company_name: str
     role: str = "general"
+    experience_level: str = "Mid-Level"
     description: str = ""
     hiring_patterns: str = ""
     tech_stack: str = ""
@@ -50,6 +51,7 @@ class CompanyProfileResponse(BaseModel):
     id: int
     company_name: str
     role: str
+    experience_level: str
     description: str | None
     hiring_patterns: str | None
     tech_stack: str | None
@@ -109,6 +111,7 @@ class InterviewStartRequest(BaseModel):
     candidate_name: str = "Candidate"
     company: str = "General"
     role: str = "Software Engineer"
+    experience_level: str = "Mid-Level"
     jd_text: str = ""  # Optional job description text for curriculum customization
     mode: Literal["standard", "option_a", "option_b", "mode_a", "mode_b"] = "standard"
     user_id: str | None = None   # required for option_a and option_b
