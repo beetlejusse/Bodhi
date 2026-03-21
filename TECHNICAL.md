@@ -64,6 +64,8 @@ Frontend Connects ─ WS /ws/{id} ───────────────�
 2. **Resume-Based** (`mode="option_a"`): Personalized using extracted candidate profile.
 3. **JD Gap Analysis** (`mode="option_b"`): Highly targeted interview based on resume profile vs. JD text gaps.
 
+*Note on Identity:* In all modes, a `MANDATORY NAME RULE` is injected into the LangGraph system target prompt. The AI is strictly forced to use the official parsed profile name to ensure identity consistency, regardless of user input.
+
 ### Phase Flow
 
 `intro` → `technical` → `behavioral` → `dsa` → `project` → `wrapup`
@@ -101,9 +103,10 @@ Phase transition (e.g., technical → behavioral):
   5. Follow-up hooks become probing directives
 
 At session end:
-  - All phase memories flushed to NeonDB (phase_memories table)
-  - All answer scores flushed to NeonDB (answer_scores table)
-  - **Report Agent Pipeline**: Total transcript + behavioral summaries are sent to a dedicated LLM Agent (`src/agents/report_agent.py`) which synthesizes the final hiring recommendation, qualitative strengths, and cross-section insights.
+  - The `end_interview` API endpoint routes the frontend instantly while scheduling backend flushing in FastAPI `BackgroundTasks`.
+  - All phase memories flushed to NeonDB (phase_memories table) (async background task).
+  - All answer scores flushed to NeonDB (answer_scores table) (async background task).
+  - **Report Agent Pipeline**: Total transcript + behavioral summaries are sent to a dedicated LLM Agent (`src/agents/report_agent.py`) which synthesizes the final hiring recommendation, qualitative strengths, and cross-section insights. (async background task)
   - Final structured report is compiled from Agent+Deterministic data.
 ```
 

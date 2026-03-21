@@ -368,6 +368,10 @@ Bodhi/
 - [x] **Clean Streams**: Filtering background graph events from the live transcript
 - [x] **Termination Intercept**: Instant session shutdown on `[END_INTERVIEW]` token
 - [x] **Phase Badge**: Real-time frontend display of the active interview phase
+- [x] **UI Layout Updates**: Side-by-side vertical video split, absolutely centered floating action controls
+- [x] **Clean Loading State**: Industry-standard setup spinner
+- [x] **Async Sessions**: Immediate frontend routing on session end via FastAPI BackgroundTasks
+- [x] **Identity Verification**: Strict candidate profile name enforcement in all system prompts
 
 ### Next
 
