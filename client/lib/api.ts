@@ -486,3 +486,44 @@ export const downloadReportPDF = async (sessionId: string) => {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 };
+
+// ── Gamification / XP ────────────────────────────────────
+
+export interface SessionXP {
+  xp_earned: number;
+  breakdown: {
+    base?: number;
+    difficulty?: number;
+    behavioral?: number;
+    integrity?: number;
+    streak_multiplier?: number;
+  };
+  new_badges: Array<{
+    id: string;
+    name: string;
+    icon: string;
+    rarity: string;
+  }>;
+}
+
+export const getSessionXP = (sessionId: string) =>
+  request<SessionXP>(`/api/gamification/sessions/${sessionId}/xp`);
+
+// ── Leaderboard ──────────────────────────────────────────
+
+export interface LeaderboardEntry {
+  rank: number;
+  clerk_user_id: string;
+  display_name: string;
+  total_xp: number;
+  weekly_xp: number;
+  total_sessions: number;
+  rank_tier: string;
+  tier_color: string;
+}
+
+export const getGlobalLeaderboard = () =>
+  request<LeaderboardEntry[]>("/api/gamification/leaderboard/global");
+
+export const getWeeklyLeaderboard = () =>
+  request<LeaderboardEntry[]>("/api/gamification/leaderboard/weekly");

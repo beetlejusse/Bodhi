@@ -6,7 +6,6 @@ import Navbar from "@/components/Navbar"
 import { PageHeader } from "@/components/ui/page-header"
 import { InterviewSetupForm, type InterviewFormData } from "@/components/interview/InterviewSetupForm"
 import { InterviewSessionView } from "@/components/interview/InterviewSessionView"
-import { InterviewSummary } from "@/components/interview/InterviewSummary"
 import { useInterviewAudio } from "@/hooks/useInterviewAudio"
 import { useProctoring } from "@/hooks/useProctoring"
 import { useSentimentAnalysis } from "@/hooks/useSentimentAnalysis"
@@ -14,15 +13,12 @@ import {
   type SessionState,
   type SessionEnd,
   type StreamMeta,
-  type InterviewReport,
   startInterviewStream,
   sendAudioStream,
   parseStreamHeaders,
   getSession,
   endInterview,
-  downloadReportPDF,
 } from "@/lib/api";
-import ReportPreview from "@/components/ReportPreview";
 
 type Phase = "idle" | "listening" | "recording" | "processing" | "speaking" | "ended"
 
@@ -32,18 +28,11 @@ interface Turn {
   phase?: string
 }
 
-const SILENCE_THRESHOLD = 0.015
-
 export default function InterviewPage() {
   const router = useRouter()
   const [sessionId, setSessionId] = useState("");
   const [phase, setPhase] = useState<Phase>("idle");
   const [transcript, setTranscript] = useState<Turn[]>([]);
-  const [sessionInfo, setSessionInfo] = useState<SessionState | null>(null);
-  const [summary, setSummary] = useState<SessionEnd | null>(null);
-  const [report, setReport] = useState<InterviewReport | null>(null);
-  const [loadingReport, setLoadingReport] = useState(false);
-  const [downloadingPDF, setDownloadingPDF] = useState(false);
   const [error, setError] = useState("");
   const [formData, setFormData] = useState<InterviewFormData | null>(null)
   const [demoMode, setDemoMode] = useState(false)
@@ -89,38 +78,15 @@ export default function InterviewPage() {
     const params = new URLSearchParams(window.location.search)
     const mode = params.get("mode") as "option_a" | "option_b" | null
     const userId = params.get("user_id")
-<<<<<<< HEAD
     const company = params.get("company")
     const role = params.get("role")
-    
-    if (phase === "idle") {
-      const baseFormData = {
-        candidate_name: "",
-        company: company || "",
-        role: role || "Software Engineer",
-        mode: "standard" as const,
-        user_id: "",
-        jd_text: "",
-        interviewer_persona: "bodhi" as const,
-      }
-      
-      if (mode && userId) {
-        setFormData({
-          ...baseFormData,
-          mode,
-          user_id: userId,
-        })
-      } else if (company || role) {
-        setFormData(baseFormData)
-      }
-=======
     const isDemoMode = params.get("demo") === "true"
-    const phase = params.get("phase")
+    const demoPhaseParam = params.get("phase")
     
-    if (isDemoMode && phase) {
+    if (isDemoMode && demoPhaseParam) {
       // Set demo mode state
       setDemoMode(true)
-      setDemoPhase(phase)
+      setDemoPhase(demoPhaseParam)
       
       // Auto-start demo mode
       setFormData({
@@ -142,31 +108,35 @@ export default function InterviewPage() {
           user_id: "",
           jd_text: "",
           interviewer_persona: "bodhi",
-        }, true, phase)
+        }, true, demoPhaseParam)
       }, 100)
-    } else if (mode && userId) {
-      setFormData((prev) => ({
-        ...(prev || {
-          candidate_name: "",
-          company: "",
-          role: "Software Engineer",
-          mode: "standard",
-          user_id: "",
-          jd_text: "",
-          interviewer_persona: "bodhi",
-        }),
-        mode,
-        user_id: userId,
-      }))
->>>>>>> d5824ffbc6110abbc08ebec81ffb3e92d2351d55
+    } else if (phase === "idle") {
+      const baseFormData = {
+        candidate_name: "",
+        company: company || "",
+        role: role || "Software Engineer",
+        mode: "standard" as const,
+        user_id: "",
+        jd_text: "",
+        interviewer_persona: "bodhi" as const,
+      }
+      
+      if (mode && userId) {
+        setFormData({
+          ...baseFormData,
+          mode,
+          user_id: userId,
+        })
+      } else if (company || role) {
+        setFormData(baseFormData)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const refreshSession = useCallback(async () => {
     try {
-      const info = await getSession(sessionIdRef.current)
-      setSessionInfo(info)
+      await getSession(sessionIdRef.current)
     } catch { }
   }, [])
 
@@ -357,19 +327,7 @@ export default function InterviewPage() {
     )
   }
 
-  // ── Render: Active Interview - Show summary if ended, otherwise show session view
-  if (phase === "ended" && summary) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navbar />
-        <div className="pt-24 pb-8 px-4 sm:px-6 max-w-7xl mx-auto">
-          <InterviewSummary summary={summary} />
-        </div>
-      </div>
-    )
-  }
-
-  // Render: Active Interview Session (no navbar, full screen)
+  // ── Render: Active Interview - Show session view
   return (
     <>
       <canvas ref={canvasRef} className="hidden" />

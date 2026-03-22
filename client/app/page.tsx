@@ -14,6 +14,7 @@ import FAQSection from "../components/faq-section";
 import PricingSection from "../components/pricing-section";
 import CTASection from "../components/cta-section";
 import FooterSection from "../components/footer-section";
+import { BodhiOrbitingDemo } from "../components/ui/bodhi-orbiting-demo";
 
 // Reusable Badge Component
 function Badge({ icon, text }: { icon: React.ReactNode; text: string }) {
@@ -330,6 +331,19 @@ export default function LandingPage() {
       </div>
 
       <div className="w-full max-w-7xl flex flex-col justify-start items-center relative">
+        {/* Bodhi Orbiting Circles Section */}
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-16 sm:py-20 lg:py-24">
+          <div className="text-center mb-12 animate-fade-in-up">
+            <h2 className="text-4xl sm:text-5xl font-bold text-[#2F3037] mb-4 tracking-tight">
+              Powered by Leading Technologies
+            </h2>
+            <p className="text-lg text-[rgba(55,50,47,0.65)] max-w-2xl mx-auto leading-relaxed">
+              Bodhi integrates seamlessly with the tools and platforms you already use
+            </p>
+          </div>
+          <BodhiOrbitingDemo />
+        </div>
+
         <SmartSimpleBrilliant />
         {<YourWorkInSync />}
         <EffortlessIntegration />

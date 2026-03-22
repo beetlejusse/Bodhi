@@ -84,11 +84,7 @@ export default function ReportPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [downloadingPDF, setDownloadingPDF] = useState(false)
-<<<<<<< HEAD
-  const [showSuccessToast, setShowSuccessToast] = useState(false)
-=======
   const [sessionXP, setSessionXP] = useState<SessionXP | null>(null)
->>>>>>> d5824ffbc6110abbc08ebec81ffb3e92d2351d55
 
   useEffect(() => {
     if (!sessionId) return
@@ -111,8 +107,6 @@ export default function ReportPage() {
     setError("")
     try { 
       await downloadReportPDF(sessionId)
-      setShowSuccessToast(true)
-      setTimeout(() => setShowSuccessToast(false), 3000)
     }
     catch (err) { setError(String(err)) }
     finally { setDownloadingPDF(false) }
